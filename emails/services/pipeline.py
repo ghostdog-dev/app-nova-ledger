@@ -1271,26 +1271,75 @@ def _run_correlation_pass(user, api_key, rate_limiter):
             f'out of {len(txs)} transactions'
         )
 
-    # --- Cross-vendor carrier correlation ---
-    # DHL/FedEx/UPS shipping emails should be merged into the real vendor's order
-    CARRIER_NAMES = {'dhl', 'dhl express', 'fedex', 'ups', 'colissimo', 'la poste', 'chronopost'}
+    # --- Cross-vendor correlation (shipping carriers → real vendors) ---
+    # Send ALL shipping transactions (no amount) + ALL order transactions to the AI
+    # The AI decides which shipping belongs to which order — no hardcoded carrier list
     remaining_txs = list(Transaction.objects.filter(user=user).order_by('id'))
-    carrier_txs = [t for t in remaining_txs if _normalize_vendor_name(t.vendor_name) in CARRIER_NAMES]
-    non_carrier_txs = [t for t in remaining_txs if _normalize_vendor_name(t.vendor_name) not in CARRIER_NAMES]
+    shipping_txs = [t for t in remaining_txs if t.type == 'shipping' and t.amount is None]
+    order_txs = [t for t in remaining_txs if t.type in ('order', 'receipt', 'invoice') and t.amount is not None]
 
-    for carrier_tx in carrier_txs:
-        if not carrier_tx.order_number:
-            continue
-        # Find a non-carrier transaction with the same order number
-        for other_tx in non_carrier_txs:
-            if other_tx.order_number and other_tx.order_number == carrier_tx.order_number:
-                logger.info(
-                    f'[Correlation] Merging carrier {carrier_tx.vendor_name} (id={carrier_tx.id}) '
-                    f'into {other_tx.vendor_name} (id={other_tx.id}) — same order #{carrier_tx.order_number}'
-                )
-                carrier_tx.delete()
-                total_merges += 1
-                break
+    if shipping_txs and order_txs:
+        all_for_cross = shipping_txs + order_txs
+        cross_data = []
+        for tx in all_for_cross:
+            cross_data.append({
+                'id': tx.id,
+                'type': tx.type,
+                'vendor_name': tx.vendor_name,
+                'amount': str(tx.amount) if tx.amount else None,
+                'transaction_date': tx.transaction_date.isoformat() if tx.transaction_date else None,
+                'order_number': tx.order_number,
+                'description': tx.description[:100] if tx.description else '',
+            })
+
+        cross_prompt = (
+            "Here are shipping transactions (no amount) and order/receipt transactions (with amount) "
+            "from DIFFERENT vendors. Some shipping emails may be delivery notifications for an order "
+            "from another vendor (e.g. a shipping company delivering a store's order).\n\n"
+            "If a shipping transaction is clearly the delivery of an existing order "
+            "(same order number, similar dates, description matches), merge them.\n\n"
+            "RULES:\n"
+            "- Same order/tracking number = MERGE (delete the shipping, keep the order)\n"
+            "- Different order numbers or no clear link = DO NOT MERGE\n"
+            "- When in doubt, do NOT merge\n\n"
+            "Return JSON array:\n"
+            '[{"keep_id": <order_id>, "delete_id": <shipping_id>, "reason": "..."}]\n'
+            "or [] if no cross-vendor matches.\n\n"
+            f"Transactions:\n{json.dumps(cross_data, ensure_ascii=False, indent=2)}"
+        )
+
+        if rate_limiter:
+            rate_limiter.wait_if_needed()
+
+        try:
+            response = _call_api_with_retry(
+                client, model=MODEL, max_tokens=2048,
+                messages=[{"role": "user", "content": cross_prompt}],
+            )
+            if rate_limiter and hasattr(response, 'usage') and response.usage:
+                rate_limiter.record_usage(response.usage.input_tokens)
+
+            response_text = _get_response_text(response)
+            cross_instructions = _extract_json(response_text)
+
+            if cross_instructions:
+                tx_by_id = {tx.id: tx for tx in all_for_cross}
+                for instr in cross_instructions:
+                    keep_id = instr.get('keep_id')
+                    delete_id = instr.get('delete_id')
+                    reason = instr.get('reason', '')
+                    if keep_id and delete_id and delete_id in tx_by_id:
+                        logger.info(
+                            f'[Correlation] Cross-vendor merge: shipping id={delete_id} '
+                            f'({tx_by_id[delete_id].vendor_name}) → order id={keep_id} '
+                            f'({tx_by_id.get(keep_id, {}).vendor_name if keep_id in tx_by_id else "?"}): {reason}'
+                        )
+                        tx_by_id[delete_id].delete()
+                        total_merges += 1
+                else:
+                    logger.info('[Correlation] No cross-vendor matches found')
+        except Exception as e:
+            logger.error(f'[Correlation] Cross-vendor correlation error: {e}')
 
     logger.info(
         f'[Correlation] === PASS 3 DONE === '
