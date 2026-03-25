@@ -435,6 +435,21 @@ def _merge_transaction(existing, tx_data, email_obj, amount, tx_date):
     existing.invoice_number = tx_data.get('invoice_number') or existing.invoice_number or ''
     existing.order_number = tx_data.get('order_number') or existing.order_number or ''
     existing.description = tx_data.get('description') or existing.description or ''
+    existing.payment_method = tx_data.get('payment_method') or existing.payment_method or ''
+    existing.payment_reference = tx_data.get('payment_reference') or existing.payment_reference or ''
+
+    # Merge optional decimal fields (prefer non-null new data)
+    for field in ('amount_tax_excl', 'tax_amount', 'tax_rate'):
+        if tx_data.get(field) is not None:
+            try:
+                setattr(existing, field, Decimal(str(tx_data[field])))
+            except (InvalidOperation, ValueError):
+                pass
+
+    # Merge items (prefer non-empty new data)
+    new_items = tx_data.get('items')
+    if new_items:
+        existing.items = new_items
 
     # Keep the highest confidence
     new_confidence = tx_data.get('confidence', 0.0)
@@ -483,6 +498,28 @@ def _execute_save_transactions(user, params):
             except (InvalidOperation, ValueError):
                 pass
 
+        # Parse optional decimal fields
+        amount_tax_excl = None
+        if tx_data.get('amount_tax_excl') is not None:
+            try:
+                amount_tax_excl = Decimal(str(tx_data['amount_tax_excl']))
+            except (InvalidOperation, ValueError):
+                pass
+
+        tax_amount = None
+        if tx_data.get('tax_amount') is not None:
+            try:
+                tax_amount = Decimal(str(tx_data['tax_amount']))
+            except (InvalidOperation, ValueError):
+                pass
+
+        tax_rate = None
+        if tx_data.get('tax_rate') is not None:
+            try:
+                tax_rate = Decimal(str(tx_data['tax_rate']))
+            except (InvalidOperation, ValueError):
+                pass
+
         # Parse date safely
         tx_date = None
         if tx_data.get('transaction_date'):
@@ -509,6 +546,12 @@ def _execute_save_transactions(user, params):
                 transaction_date=tx_date,
                 invoice_number=tx_data.get('invoice_number', '') or '',
                 order_number=tx_data.get('order_number', '') or '',
+                amount_tax_excl=amount_tax_excl,
+                tax_amount=tax_amount,
+                tax_rate=tax_rate,
+                payment_method=tx_data.get('payment_method', '') or '',
+                payment_reference=tx_data.get('payment_reference', '') or '',
+                items=tx_data.get('items', []) or [],
                 description=tx_data.get('description', '') or '',
                 confidence=tx_data.get('confidence', 0.0),
                 status=tx_data.get('status', 'partial'),

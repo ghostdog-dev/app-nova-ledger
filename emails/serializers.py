@@ -22,6 +22,8 @@ class TransactionSerializer(serializers.ModelSerializer):
         model = Transaction
         fields = [
             'id', 'type', 'status', 'vendor_name', 'amount', 'currency',
+            'amount_tax_excl', 'tax_amount', 'tax_rate',
+            'payment_method', 'payment_reference', 'items',
             'transaction_date', 'invoice_number', 'order_number',
             'description', 'raw_data', 'confidence', 'processed_at',
             'email_subject', 'email_from',

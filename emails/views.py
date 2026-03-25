@@ -263,8 +263,8 @@ class EmailClassifyView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from .services.agent import classify_emails
-        result = classify_emails(request.user)
+        from .services.pipeline import run_pipeline
+        result = run_pipeline(request.user)
         return Response(result)
 
 
