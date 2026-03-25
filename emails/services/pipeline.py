@@ -31,7 +31,7 @@ from emails.services.agent import (
     _normalize_vendor_name,
 )
 from emails.services.merge import merge_related_transactions
-from emails.services.prefilter import prefilter_emails
+# prefilter removed — triage IA handles everything
 from emails.services.token_refresh import get_valid_token
 
 logger = logging.getLogger(__name__)
@@ -1197,29 +1197,20 @@ def run_pipeline(user):
 
     logger.info('====== PIPELINE START ======')
 
-    # Step 1: Prefilter
-    prefilter_stats = prefilter_emails(user)
-    logger.info(
-        f'[Prefilter] {prefilter_stats["auto_ignored"]} auto-ignored, '
-        f'{prefilter_stats["remaining_for_ai"]} remaining for AI'
-    )
-
-    # Step 2: Triage
+    # Step 1: Triage — IA decides what's transactional
     triage_stats = _run_triage_pass(user, api_key)
 
-    # Step 3: Extraction
+    # Step 2: Extraction — IA extracts structured data
     extraction_stats = _run_extraction_pass(user, api_key)
 
-    # Step 4: Correlation
+    # Step 3: Correlation — IA merges related transactions
     correlation_stats = _run_correlation_pass(user, api_key)
 
-    # Step 5: Verification
+    # Step 4: Verification — IA reviews final quality
     verification_stats = _run_verification_pass(user, api_key)
 
     # Combine all stats
     stats = {
-        'prefilter_auto_ignored': prefilter_stats['auto_ignored'],
-        'prefilter_remaining': prefilter_stats['remaining_for_ai'],
         **triage_stats,
         **extraction_stats,
         **correlation_stats,
