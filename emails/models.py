@@ -22,6 +22,7 @@ class Email(models.Model):
     date = models.DateTimeField()
     labels = models.JSONField(default=list)
     has_attachments = models.BooleanField(default=False)
+    has_list_unsubscribe = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW)
     fetched_at = models.DateTimeField(auto_now_add=True)
 

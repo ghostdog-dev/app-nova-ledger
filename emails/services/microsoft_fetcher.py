@@ -6,6 +6,7 @@ from allauth.socialaccount.models import SocialAccount, SocialToken
 from django.utils import timezone as dj_timezone
 
 from emails.models import Email
+from emails.services.token_refresh import get_valid_token
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,9 @@ def _parse_ms_datetime(dt_str):
         return dj_timezone.now()
 
 
-def _fetch_folder(user, token, folder, existing_ids, max_pages=None, since_date=None):
+def _fetch_folder(user, access_token, folder, existing_ids, max_pages=None, since_date=None):
     """Fetch emails from a specific Microsoft mail folder."""
-    headers = {'Authorization': f'Bearer {token.token}'}
+    headers = {'Authorization': f'Bearer {access_token}'}
     new_emails = []
 
     date_filter = ''
@@ -45,7 +46,7 @@ def _fetch_folder(user, token, folder, existing_ids, max_pages=None, since_date=
     url = (
         f'{GRAPH_API}/mailFolders/{folder}/messages'
         f'?$top={PAGE_SIZE}'
-        f'&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments,categories,inferenceClassification'
+        f'&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments,categories,inferenceClassification,internetMessageHeaders'
         f'&$orderby=receivedDateTime desc'
         f'{date_filter}'
     )
@@ -71,6 +72,15 @@ def _fetch_folder(user, token, folder, existing_ids, max_pages=None, since_date=
 
             from_data = msg.get('from', {}).get('emailAddress', {})
 
+            # Detect List-Unsubscribe in internet message headers
+            has_list_unsubscribe = False
+            internet_headers = msg.get('internetMessageHeaders', [])
+            if internet_headers:
+                for header in internet_headers:
+                    if header.get('name', '').lower() == 'list-unsubscribe':
+                        has_list_unsubscribe = True
+                        break
+
             new_emails.append(Email(
                 user=user,
                 provider=Email.Provider.MICROSOFT,
@@ -82,6 +92,7 @@ def _fetch_folder(user, token, folder, existing_ids, max_pages=None, since_date=
                 date=_parse_ms_datetime(msg.get('receivedDateTime')),
                 labels=msg.get('categories', []),
                 has_attachments=msg.get('hasAttachments', False),
+                has_list_unsubscribe=has_list_unsubscribe,
                 status=Email.Status.NEW,
             ))
 
@@ -102,9 +113,9 @@ def fetch_emails(user, max_pages=None, since_date=None):
         since_date: Optional date string (YYYY-MM-DD). Defaults to 30 days ago.
     Returns count of new emails saved.
     """
-    token = _get_microsoft_token(user)
-    if not token:
-        logger.info(f'No Microsoft token for user {user.pk}')
+    access_token = get_valid_token(user, 'microsoft')
+    if not access_token:
+        logger.info(f'No valid Microsoft token for user {user.pk}')
         return 0
 
     # Default to 30 days ago
@@ -121,10 +132,10 @@ def fetch_emails(user, max_pages=None, since_date=None):
     all_new_emails = []
 
     # Fetch from Inbox (excludes JunkEmail, Deleted Items, etc.)
-    all_new_emails.extend(_fetch_folder(user, token, 'inbox', existing_ids, max_pages, since_date))
+    all_new_emails.extend(_fetch_folder(user, access_token, 'inbox', existing_ids, max_pages, since_date))
 
     # Also fetch SentItems (useful for sent invoices)
-    all_new_emails.extend(_fetch_folder(user, token, 'sentitems', existing_ids, max_pages, since_date))
+    all_new_emails.extend(_fetch_folder(user, access_token, 'sentitems', existing_ids, max_pages, since_date))
 
     # Bulk create, skip duplicates
     if all_new_emails:

@@ -7,6 +7,7 @@ from allauth.socialaccount.models import SocialAccount, SocialToken
 from django.utils import timezone as dj_timezone
 
 from emails.models import Email
+from emails.services.token_refresh import get_valid_token
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +67,12 @@ def fetch_emails(user, max_pages=None, since_date=None):
         since_date: Optional date string (YYYY-MM-DD). Defaults to 30 days ago.
     Returns count of new emails saved.
     """
-    token = _get_google_token(user)
-    if not token:
-        logger.info(f'No Google token for user {user.pk}')
+    access_token = get_valid_token(user, 'google')
+    if not access_token:
+        logger.info(f'No valid Google token for user {user.pk}')
         return 0
 
-    headers = {'Authorization': f'Bearer {token.token}'}
+    headers = {'Authorization': f'Bearer {access_token}'}
 
     # Default to 30 days ago
     if not since_date:
@@ -119,7 +120,7 @@ def fetch_emails(user, max_pages=None, since_date=None):
             detail_resp = requests.get(
                 f'{GMAIL_API}/messages/{msg_id}',
                 headers=headers,
-                params={'format': 'metadata', 'metadataHeaders': ['From', 'Subject', 'Date']},
+                params={'format': 'metadata', 'metadataHeaders': ['From', 'Subject', 'Date', 'List-Unsubscribe']},
             )
             if detail_resp.status_code != 200:
                 logger.warning(f'Gmail get message {msg_id} failed: {detail_resp.status_code}')
@@ -129,6 +130,9 @@ def fetch_emails(user, max_pages=None, since_date=None):
             msg_headers = msg_data.get('payload', {}).get('headers', [])
             from_raw = _get_header(msg_headers, 'From')
             from_name, from_address = _parse_from_header(from_raw)
+
+            # Detect List-Unsubscribe header (indicates bulk/marketing mail)
+            has_list_unsubscribe = bool(_get_header(msg_headers, 'List-Unsubscribe'))
 
             new_emails.append(Email(
                 user=user,
@@ -141,6 +145,7 @@ def fetch_emails(user, max_pages=None, since_date=None):
                 date=_parse_gmail_date(msg_data.get('internalDate')),
                 labels=msg_data.get('labelIds', []),
                 has_attachments=_has_attachments(msg_data.get('payload', {})),
+                has_list_unsubscribe=has_list_unsubscribe,
                 status=Email.Status.NEW,
             ))
 

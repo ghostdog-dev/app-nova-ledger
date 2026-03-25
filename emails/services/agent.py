@@ -1,6 +1,8 @@
 import json
 import logging
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from decimal import Decimal, InvalidOperation
 
 import anthropic
@@ -10,12 +12,16 @@ from django.conf import settings
 from django.utils import timezone
 
 from emails.models import Email, Transaction
+from emails.services.prefilter import prefilter_emails
+from emails.services.token_refresh import get_valid_token
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 15  # Emails per LLM batch
+BATCH_SIZE = 25  # Emails per LLM batch (increased — most batches are all-ignored)
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2  # seconds
+MAX_CONCURRENT_BATCHES = 3  # Max parallel batch threads
+RATE_LIMIT_INPUT_TOKENS = 40_000  # Conservative limit (actual is 50k/min)
 
 # --- Tool definitions for Claude ---
 
@@ -150,14 +156,15 @@ TOOLS = [
         "name": "search_transactions",
         "description": (
             "Search existing transactions in the database for correlation. "
-            "Use this to check if a transaction already exists or to find related transactions."
+            "Use this to check if a transaction already exists or to find related transactions. "
+            "Vendor name search is fuzzy (strips Inc/Ltd/SAS/etc and ignores case)."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "vendor_name": {
                     "type": "string",
-                    "description": "Search by vendor name (partial match).",
+                    "description": "Search by vendor name (fuzzy match: case-insensitive, strips common suffixes like Inc/Ltd/SAS).",
                 },
                 "order_number": {
                     "type": "string",
@@ -166,6 +173,28 @@ TOOLS = [
                 "invoice_number": {
                     "type": "string",
                     "description": "Search by invoice number.",
+                },
+                "email_id": {
+                    "type": "integer",
+                    "description": "Search by source email database ID.",
+                },
+                "amount": {
+                    "type": "number",
+                    "description": "Search by exact transaction amount.",
+                },
+                "date_range": {
+                    "type": "object",
+                    "properties": {
+                        "from": {
+                            "type": "string",
+                            "description": "Start date in YYYY-MM-DD format (inclusive).",
+                        },
+                        "to": {
+                            "type": "string",
+                            "description": "End date in YYYY-MM-DD format (inclusive).",
+                        },
+                    },
+                    "description": "Filter by transaction date range.",
                 },
                 "status": {
                     "type": "string",
@@ -204,6 +233,12 @@ DEDUPLICATION — VERY IMPORTANT:
 - Multiple emails about the same order (confirmation, shipping, delivered) should UPDATE the existing transaction, not create duplicates
 - For shipping updates on an existing order, update the existing transaction's type rather than creating a new one
 
+TRANSACTION LIFECYCLE & CORRELATION:
+- Multiple emails about the same order (confirmation -> shipping -> delivered) represent ONE transaction lifecycle. Find the existing transaction and update its type/status rather than creating new ones.
+- A receipt email and a payment failed email for the same amount from the same vendor on the same day are SEPARATE transactions (one succeeded, one failed) — do NOT merge them.
+- For shipping-only emails with no amount, try to correlate with an existing order from the same vendor using search_transactions. If found, don't create a new transaction — the shipping info belongs to the existing order.
+- DHL/FedEx/UPS shipping emails should be correlated to the vendor who shipped, not to the carrier itself. Use search_transactions to find an order with a matching tracking/order number.
+
 BATCH PROCESSING:
 - Process ALL emails in the batch — either save a transaction or mark as ignored
 - You can save multiple transactions at once using save_transactions
@@ -237,15 +272,14 @@ def _execute_list_emails(user, params):
 def _fetch_gmail_body(email_obj):
     """Fetch email body from Gmail API."""
     import base64
-    try:
-        account = SocialAccount.objects.get(user=email_obj.user, provider='google')
-        token = SocialToken.objects.get(account=account)
-    except (SocialAccount.DoesNotExist, SocialToken.DoesNotExist):
+
+    access_token = get_valid_token(email_obj.user, 'google')
+    if not access_token:
         return "Error: no Google token available"
 
     resp = requests.get(
         f'https://gmail.googleapis.com/gmail/v1/users/me/messages/{email_obj.message_id}',
-        headers={'Authorization': f'Bearer {token.token}'},
+        headers={'Authorization': f'Bearer {access_token}'},
         params={'format': 'full'},
     )
     if resp.status_code != 200:
@@ -286,15 +320,13 @@ def _fetch_gmail_body(email_obj):
 
 def _fetch_microsoft_body(email_obj):
     """Fetch email body from Microsoft Graph API."""
-    try:
-        account = SocialAccount.objects.get(user=email_obj.user, provider='microsoft')
-        token = SocialToken.objects.get(account=account)
-    except (SocialAccount.DoesNotExist, SocialToken.DoesNotExist):
+    access_token = get_valid_token(email_obj.user, 'microsoft')
+    if not access_token:
         return "Error: no Microsoft token available"
 
     resp = requests.get(
         f'https://graph.microsoft.com/v1.0/me/messages/{email_obj.message_id}',
-        headers={'Authorization': f'Bearer {token.token}'},
+        headers={'Authorization': f'Bearer {access_token}'},
         params={'$select': 'body'},
     )
     if resp.status_code != 200:
@@ -330,6 +362,114 @@ def _execute_get_email_body(user, params):
     return {"email_id": email_id, "body": body}
 
 
+def _normalize_vendor_name(name):
+    """Normalize vendor name for fuzzy comparison: lowercase, strip common suffixes."""
+    import re
+    if not name:
+        return ''
+    name = name.strip().lower()
+    # Strip common corporate suffixes
+    name = re.sub(
+        r'\b(inc\.?|ltd\.?|llc\.?|pbc\.?|sas\.?|sa\.?|gmbh\.?|co\.?|corp\.?|limited|pty\.?)\s*$',
+        '', name, flags=re.IGNORECASE,
+    )
+    # Collapse whitespace
+    name = re.sub(r'\s+', ' ', name).strip()
+    return name
+
+
+def _find_existing_transaction(user, email_obj, tx_data, amount, tx_date):
+    """
+    Find an existing transaction matching ANY of these criteria (checked in order):
+    1. Same email_id (source email)
+    2. Same order_number (if not empty)
+    3. Same invoice_number (if not empty)
+    4. Same vendor_name (normalized) + same amount + same date
+    Returns the first match or None.
+    """
+    # 1. Same source email
+    if email_obj:
+        match = Transaction.objects.filter(user=user, email=email_obj).first()
+        if match:
+            return match
+
+    # 2. Same order_number
+    order_number = tx_data.get('order_number', '').strip()
+    if order_number:
+        match = Transaction.objects.filter(user=user, order_number=order_number).first()
+        if match:
+            return match
+
+    # 3. Same invoice_number
+    invoice_number = tx_data.get('invoice_number', '').strip()
+    if invoice_number:
+        match = Transaction.objects.filter(user=user, invoice_number=invoice_number).first()
+        if match:
+            return match
+
+    # 4. Same vendor (normalized) + same amount + same date
+    vendor_name = tx_data.get('vendor_name', '')
+    normalized = _normalize_vendor_name(vendor_name)
+    if normalized and amount is not None and tx_date:
+        candidates = Transaction.objects.filter(
+            user=user, amount=amount, transaction_date=tx_date,
+        )
+        for candidate in candidates:
+            if _normalize_vendor_name(candidate.vendor_name) == normalized:
+                return candidate
+
+    return None
+
+
+def _merge_transaction(existing, tx_data, email_obj, amount, tx_date):
+    """
+    Merge new data into an existing transaction, keeping the most complete version.
+    - Merges raw_data dicts
+    - Keeps the highest confidence
+    - Upgrades status from partial to complete if new data fills missing fields
+    """
+    existing.type = tx_data.get('type', existing.type)
+    existing.vendor_name = tx_data.get('vendor_name') or existing.vendor_name
+
+    # Keep the most informative amount (prefer non-null)
+    if amount is not None:
+        existing.amount = amount
+    existing.currency = tx_data.get('currency') or existing.currency or 'EUR'
+
+    # Keep the most informative date (prefer non-null)
+    if tx_date:
+        existing.transaction_date = tx_date
+
+    # Merge string fields: keep whichever is non-empty, prefer new data if both exist
+    existing.invoice_number = tx_data.get('invoice_number') or existing.invoice_number or ''
+    existing.order_number = tx_data.get('order_number') or existing.order_number or ''
+    existing.description = tx_data.get('description') or existing.description or ''
+
+    # Keep the highest confidence
+    new_confidence = tx_data.get('confidence', 0.0)
+    existing.confidence = max(existing.confidence, new_confidence)
+
+    # Upgrade status from partial to complete if new data fills missing fields
+    new_status = tx_data.get('status', existing.status)
+    if existing.status == 'partial' and new_status == 'complete':
+        existing.status = 'complete'
+    elif existing.status == 'complete':
+        pass  # Don't downgrade
+    else:
+        existing.status = new_status
+
+    # Link the new email too (keep the original, but update if none was set)
+    if email_obj and not existing.email:
+        existing.email = email_obj
+
+    # Merge raw_data dicts
+    merged_raw = existing.raw_data.copy() if isinstance(existing.raw_data, dict) else {}
+    merged_raw.update(tx_data)
+    existing.raw_data = merged_raw
+
+    existing.save()
+
+
 def _execute_save_transactions(user, params):
     transactions_data = params.get('transactions', [])
     created = 0
@@ -361,27 +501,11 @@ def _execute_save_transactions(user, params):
             except ValueError:
                 pass
 
-        # Check for existing transaction on same email
-        existing = None
-        if email_obj:
-            existing = Transaction.objects.filter(user=user, email=email_obj).first()
+        # Find existing transaction using multi-criteria dedup
+        existing = _find_existing_transaction(user, email_obj, tx_data, amount, tx_date)
 
         if existing:
-            # Update existing
-            existing.type = tx_data.get('type', existing.type)
-            existing.vendor_name = tx_data.get('vendor_name', existing.vendor_name)
-            if amount is not None:
-                existing.amount = amount
-            existing.currency = tx_data.get('currency', existing.currency) or 'EUR'
-            if tx_date:
-                existing.transaction_date = tx_date
-            existing.invoice_number = tx_data.get('invoice_number', existing.invoice_number) or ''
-            existing.order_number = tx_data.get('order_number', existing.order_number) or ''
-            existing.description = tx_data.get('description', existing.description) or ''
-            existing.confidence = tx_data.get('confidence', existing.confidence)
-            existing.status = tx_data.get('status', existing.status)
-            existing.raw_data = tx_data
-            existing.save()
+            _merge_transaction(existing, tx_data, email_obj, amount, tx_date)
             updated += 1
         else:
             Transaction.objects.create(
@@ -412,13 +536,49 @@ def _execute_mark_emails_processed(user, params):
 
 
 def _execute_search_transactions(user, params):
+    import re
+    from datetime import date as date_type
+
     qs = Transaction.objects.filter(user=user)
+
+    # Fuzzy vendor name search: normalize and match against all transactions
     if params.get('vendor_name'):
-        qs = qs.filter(vendor_name__icontains=params['vendor_name'])
+        search_name = params['vendor_name'].strip().lower()
+        # Strip common corporate suffixes from search term
+        search_name_normalized = re.sub(
+            r'\b(inc\.?|ltd\.?|llc\.?|pbc\.?|sas\.?|sa\.?|gmbh\.?|co\.?|corp\.?|limited|pty\.?)\s*$',
+            '', search_name, flags=re.IGNORECASE,
+        ).strip()
+        # Use icontains on the core name for DB-level filtering, then refine in Python
+        if search_name_normalized:
+            qs = qs.filter(vendor_name__icontains=search_name_normalized)
+
     if params.get('order_number'):
         qs = qs.filter(order_number=params['order_number'])
     if params.get('invoice_number'):
         qs = qs.filter(invoice_number=params['invoice_number'])
+    if params.get('email_id'):
+        qs = qs.filter(email_id=params['email_id'])
+    if params.get('amount') is not None:
+        try:
+            amount_val = Decimal(str(params['amount']))
+            qs = qs.filter(amount=amount_val)
+        except (InvalidOperation, ValueError):
+            pass
+    if params.get('date_range'):
+        date_range = params['date_range']
+        if date_range.get('from'):
+            try:
+                from_date = date_type.fromisoformat(date_range['from'])
+                qs = qs.filter(transaction_date__gte=from_date)
+            except ValueError:
+                pass
+        if date_range.get('to'):
+            try:
+                to_date = date_type.fromisoformat(date_range['to'])
+                qs = qs.filter(transaction_date__lte=to_date)
+            except ValueError:
+                pass
     if params.get('status'):
         qs = qs.filter(status=params['status'])
 
@@ -435,7 +595,9 @@ def _execute_search_transactions(user, params):
             'transaction_date': t.transaction_date.isoformat() if t.transaction_date else None,
             'invoice_number': t.invoice_number,
             'order_number': t.order_number,
+            'description': t.description,
             'status': t.status,
+            'email_id': t.email_id,
         }
         for t in results
     ]
@@ -448,6 +610,52 @@ TOOL_HANDLERS = {
     'mark_emails_processed': _execute_mark_emails_processed,
     'search_transactions': _execute_search_transactions,
 }
+
+
+# --- Rate limiter ---
+
+class RateLimiter:
+    """Thread-safe rate limiter that tracks input tokens per minute."""
+
+    def __init__(self, max_tokens_per_minute=RATE_LIMIT_INPUT_TOKENS):
+        self.max_tokens_per_minute = max_tokens_per_minute
+        self._lock = threading.Lock()
+        self._tokens_used = []  # list of (timestamp, token_count)
+
+    def record_usage(self, input_tokens):
+        """Record token usage from an API response."""
+        with self._lock:
+            self._tokens_used.append((time.monotonic(), input_tokens))
+
+    def _purge_old_entries(self):
+        """Remove entries older than 60 seconds. Must be called with lock held."""
+        cutoff = time.monotonic() - 60
+        self._tokens_used = [(ts, count) for ts, count in self._tokens_used if ts > cutoff]
+
+    def _current_usage(self):
+        """Get tokens used in the last 60 seconds. Must be called with lock held."""
+        self._purge_old_entries()
+        return sum(count for _, count in self._tokens_used)
+
+    def wait_if_needed(self):
+        """Block until we have headroom under the rate limit."""
+        while True:
+            with self._lock:
+                self._purge_old_entries()
+                current = sum(count for _, count in self._tokens_used)
+                if current < self.max_tokens_per_minute:
+                    return
+                # Calculate how long until enough tokens expire
+                if self._tokens_used:
+                    oldest_ts = self._tokens_used[0][0]
+                    wait_time = 60 - (time.monotonic() - oldest_ts) + 0.5
+                else:
+                    wait_time = 1.0
+            logger.warning(
+                f'Rate limiter: {current}/{self.max_tokens_per_minute} tokens used in last 60s, '
+                f'sleeping {wait_time:.1f}s'
+            )
+            time.sleep(max(wait_time, 0.5))
 
 
 # --- Agent orchestration ---
@@ -473,10 +681,12 @@ def _call_api_with_retry(client, **kwargs):
                 raise
 
 
-def _run_agent_on_batch(client, user, emails_data, stats):
+def _run_agent_on_batch(client, user, emails_data, batch_stats, rate_limiter=None):
     """
     Run a single agent session on a small batch of emails.
     Fresh context each time to avoid token accumulation.
+    Each thread should pass its own Anthropic client instance.
+    batch_stats is a local dict for this batch (aggregated by caller).
     """
     # Build the email list directly in the prompt (no tool call needed)
     emails_text = json.dumps(emails_data, default=str, ensure_ascii=False)
@@ -487,12 +697,17 @@ def _run_agent_on_batch(client, user, emails_data, stats):
         f"- If transactional: use save_transactions to save extracted data, then mark_emails_processed with status='processed'\n"
         f"- If NOT transactional (newsletter, notification, conversation, security alert, verification code, marketing): mark_emails_processed with status='ignored'\n"
         f"- IMPORTANT: If a snippet is empty/blank but the subject suggests a transaction (commande, order, shipped, facture, etc.), ALWAYS use get_email_body to fetch the content\n"
-        f"- Before creating a transaction, use search_transactions to check if one already exists for the same order/invoice number — UPDATE instead of creating duplicates\n"
+        f"- SEARCH BEFORE CREATING: Before saving a new transaction, ALWAYS use search_transactions to check if one already exists for the same order/invoice number or same vendor — UPDATE instead of creating duplicates\n"
+        f"- SHIPPING CORRELATION: For shipping/delivery emails, search for the original order from the same vendor before creating a new transaction. If found, update the existing one.\n"
+        f"- CARRIER EMAILS: If a shipping email is from DHL/FedEx/UPS/etc., the vendor is NOT the carrier — search for the actual vendor's order using the tracking or order number.\n"
         f"- Process ALL emails — don't skip any\n\n"
         f"Emails:\n{emails_text}"
     )
 
     messages = [{"role": "user", "content": user_msg}]
+
+    if rate_limiter:
+        rate_limiter.wait_if_needed()
 
     response = _call_api_with_retry(
         client,
@@ -502,7 +717,11 @@ def _run_agent_on_batch(client, user, emails_data, stats):
         tools=TOOLS,
         messages=messages,
     )
-    stats["api_calls"] += 1
+    batch_stats["api_calls"] += 1
+
+    # Record token usage for rate limiting
+    if rate_limiter and hasattr(response, 'usage') and response.usage:
+        rate_limiter.record_usage(response.usage.input_tokens)
 
     # Agentic loop for this batch
     max_iterations = 15
@@ -537,14 +756,14 @@ def _run_agent_on_batch(client, user, emails_data, stats):
                         logger.info(f'  TOOL RESULT: {tool_name} -> {json.dumps(result, default=str)[:300]}')
 
                         if tool_name == 'save_transactions':
-                            stats["transactions_created"] += result.get("created", 0)
-                            stats["transactions_updated"] += result.get("updated", 0)
+                            batch_stats["transactions_created"] += result.get("created", 0)
+                            batch_stats["transactions_updated"] += result.get("updated", 0)
                             logger.info(f'    +{result.get("created", 0)} created, +{result.get("updated", 0)} updated')
                         elif tool_name == 'mark_emails_processed':
                             if tool_input.get('status') == 'processed':
-                                stats["emails_processed"] += result.get("marked", 0)
+                                batch_stats["emails_processed"] += result.get("marked", 0)
                             elif tool_input.get('status') == 'ignored':
-                                stats["emails_ignored"] += result.get("marked", 0)
+                                batch_stats["emails_ignored"] += result.get("marked", 0)
                             logger.info(f'    Marked {result.get("marked", 0)} as {tool_input.get("status")}')
 
                     except Exception as e:
@@ -562,6 +781,9 @@ def _run_agent_on_batch(client, user, emails_data, stats):
         messages.append({"role": "assistant", "content": assistant_content})
         messages.append({"role": "user", "content": tool_results})
 
+        if rate_limiter:
+            rate_limiter.wait_if_needed()
+
         response = _call_api_with_retry(
             client,
             model="claude-haiku-4-5-20251001",
@@ -570,13 +792,58 @@ def _run_agent_on_batch(client, user, emails_data, stats):
             tools=TOOLS,
             messages=messages,
         )
-        stats["api_calls"] += 1
+        batch_stats["api_calls"] += 1
+
+        # Record token usage for rate limiting
+        if rate_limiter and hasattr(response, 'usage') and response.usage:
+            rate_limiter.record_usage(response.usage.input_tokens)
+
+
+def _process_single_batch(api_key, user, batch_data, batch_num, total_batches, rate_limiter):
+    """
+    Process a single batch in its own thread with its own Anthropic client.
+    Returns a batch_stats dict.
+    """
+    thread_id = threading.current_thread().name
+    logger.info(f'=== BATCH {batch_num}/{total_batches} === ({len(batch_data)} emails) (thread-{thread_id})')
+
+    # Each thread gets its own Anthropic client instance
+    client = anthropic.Anthropic(api_key=api_key)
+
+    batch_stats = {
+        "transactions_created": 0,
+        "transactions_updated": 0,
+        "emails_processed": 0,
+        "emails_ignored": 0,
+        "api_calls": 0,
+        "batches": 0,
+        "errors": 0,
+    }
+
+    try:
+        _run_agent_on_batch(client, user, batch_data, batch_stats, rate_limiter=rate_limiter)
+        batch_stats["batches"] += 1
+    except anthropic.RateLimitError:
+        logger.warning(f'Rate limited on batch {batch_num} (thread-{thread_id}), waiting 60s before retry...')
+        time.sleep(60)
+        try:
+            _run_agent_on_batch(client, user, batch_data, batch_stats, rate_limiter=rate_limiter)
+            batch_stats["batches"] += 1
+        except Exception as e:
+            logger.error(f'Batch {batch_num} failed after retry (thread-{thread_id}): {e}')
+            batch_stats["errors"] += 1
+    except Exception as e:
+        logger.error(f'Batch {batch_num} error (thread-{thread_id}): {e}')
+        batch_stats["errors"] += 1
+
+    logger.info(f'Batch {batch_num}/{total_batches} completed (thread-{thread_id})')
+    return batch_stats
 
 
 def classify_emails(user):
     """
     Run the Claude agent to classify emails and extract transactions.
-    Processes in small batches with fresh context each time to stay under rate limits.
+    Processes in parallel batches with rate limiting.
     Returns stats dict.
     """
     api_key = getattr(settings, 'ANTHROPIC_API_KEY', None)
@@ -586,7 +853,14 @@ def classify_emails(user):
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not configured"}
 
-    # Check there are emails to process
+    # Run rule-based pre-filter to remove obvious non-transactional emails
+    prefilter_stats = prefilter_emails(user)
+    logger.info(
+        f'Pre-filter results: {prefilter_stats["auto_ignored"]} auto-ignored, '
+        f'{prefilter_stats["remaining_for_ai"]} remaining for AI'
+    )
+
+    # Check there are emails to process (after pre-filtering)
     new_emails = list(
         Email.objects.filter(user=user, status=Email.Status.NEW)
         .order_by('-date')
@@ -594,31 +868,29 @@ def classify_emails(user):
     )
 
     if not new_emails:
-        return {"message": "No emails to process", "processed": 0}
-
-    client = anthropic.Anthropic(api_key=api_key)
+        return {
+            "message": "No emails to process after pre-filtering",
+            "processed": 0,
+            "prefilter_auto_ignored": prefilter_stats["auto_ignored"],
+        }
 
     stats = {
         "transactions_created": 0,
         "transactions_updated": 0,
         "emails_processed": 0,
         "emails_ignored": 0,
+        "prefilter_auto_ignored": prefilter_stats["auto_ignored"],
         "api_calls": 0,
         "batches": 0,
+        "errors": 0,
         "total_emails": len(new_emails),
     }
+    stats_lock = threading.Lock()
 
-    logger.info(f'=== AGENT START === {len(new_emails)} new emails to classify')
-
-    # Process in batches of BATCH_SIZE with fresh context each time
+    # Prepare all batches
+    all_batches = []
     for i in range(0, len(new_emails), BATCH_SIZE):
         batch = new_emails[i:i + BATCH_SIZE]
-        batch_num = i // BATCH_SIZE + 1
-        total_batches = (len(new_emails) + BATCH_SIZE - 1) // BATCH_SIZE
-
-        logger.info(f'=== BATCH {batch_num}/{total_batches} === ({len(batch)} emails)')
-
-        # Convert dates to strings for JSON
         batch_data = []
         for e in batch:
             batch_data.append({
@@ -630,26 +902,48 @@ def classify_emails(user):
                 'date': e['date'].isoformat() if e['date'] else '',
                 'has_attachments': e['has_attachments'],
             })
+        all_batches.append(batch_data)
 
-        try:
-            _run_agent_on_batch(client, user, batch_data, stats)
-            stats["batches"] += 1
-        except anthropic.RateLimitError:
-            logger.warning(f'Rate limited on batch {batch_num}, waiting 60s before retry...')
-            time.sleep(60)
+    total_batches = len(all_batches)
+
+    logger.info(f'=== AGENT START === {len(new_emails)} new emails to classify')
+    logger.info(f'Starting parallel processing: {total_batches} batches, max {MAX_CONCURRENT_BATCHES} concurrent')
+
+    rate_limiter = RateLimiter(max_tokens_per_minute=RATE_LIMIT_INPUT_TOKENS)
+
+    def _aggregate_stats(batch_stats):
+        """Thread-safe aggregation of batch stats into global stats."""
+        with stats_lock:
+            for key in ("transactions_created", "transactions_updated",
+                        "emails_processed", "emails_ignored",
+                        "api_calls", "batches", "errors"):
+                stats[key] += batch_stats.get(key, 0)
+
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_BATCHES) as executor:
+        futures = {}
+        for batch_idx, batch_data in enumerate(all_batches):
+            batch_num = batch_idx + 1
+
+            # Stagger batch launches by 1 second
+            if batch_idx > 0:
+                time.sleep(1)
+
+            future = executor.submit(
+                _process_single_batch,
+                api_key, user, batch_data, batch_num, total_batches, rate_limiter,
+            )
+            futures[future] = batch_num
+
+        # Collect results as they complete
+        for future in as_completed(futures):
+            batch_num = futures[future]
             try:
-                _run_agent_on_batch(client, user, batch_data, stats)
-                stats["batches"] += 1
+                batch_stats = future.result()
+                _aggregate_stats(batch_stats)
             except Exception as e:
-                logger.error(f'Batch {batch_num} failed after retry: {e}')
-                stats["errors"] = stats.get("errors", 0) + 1
-        except Exception as e:
-            logger.error(f'Batch {batch_num} error: {e}')
-            stats["errors"] = stats.get("errors", 0) + 1
-
-        # Small pause between batches to respect rate limits
-        if i + BATCH_SIZE < len(new_emails):
-            time.sleep(2)
+                logger.error(f'Batch {batch_num} raised unexpected exception: {e}')
+                with stats_lock:
+                    stats["errors"] += 1
 
     logger.info(f'=== AGENT DONE === batches: {stats["batches"]}, API calls: {stats["api_calls"]}, '
                 f'transactions created: {stats["transactions_created"]}, '
