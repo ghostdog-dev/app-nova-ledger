@@ -12,6 +12,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from emails.models import Email, Transaction
+from emails.services.merge import merge_related_transactions
 from emails.services.prefilter import prefilter_emails
 from emails.services.token_refresh import get_valid_token
 
@@ -91,7 +92,7 @@ TOOLS = [
                             "type": {
                                 "type": "string",
                                 "enum": ["invoice", "receipt", "order", "payment",
-                                         "shipping", "refund", "subscription", "other"],
+                                         "shipping", "refund", "cancellation", "subscription", "other"],
                             },
                             "vendor_name": {"type": "string"},
                             "amount": {
@@ -210,40 +211,30 @@ TOOLS = [
     },
 ]
 
-SYSTEM_PROMPT = """You are a financial email classifier and data extractor for a business accounting tool.
+SYSTEM_PROMPT = """You classify emails as transactional or not, and extract transaction data.
 
-Your job:
-1. Analyze email metadata (from, subject, snippet, date) to identify transactional emails
-2. Transactional emails include: invoices, receipts, orders, order confirmations, payments, shipping confirmations, refunds, cancellations, subscriptions
-3. Extract structured data: vendor_name, amount, currency, transaction_date, invoice_number, order_number, type
-4. Set status='complete' if you have at least vendor + amount + date, otherwise 'partial'
-5. Set confidence (0.0-1.0) based on how sure you are this is a real financial transaction
-6. Mark non-transactional emails as 'ignored' (conversations, newsletters, notifications, account security, verification codes, marketing, promotions)
+CORE RULE — ONE TRANSACTION PER PURCHASE:
+- ALWAYS search_transactions by vendor/order/invoice BEFORE saving. If a match exists, save with the same order_number so it gets merged — do NOT create a new transaction.
+- A shipping email for a SHEIN order? Search for the existing SHEIN order and mark the shipping email as processed. Do NOT create a separate shipping transaction.
+- A receipt and a payment notification for the same amount, same vendor, same date = SAME transaction. Save only once.
+- Carrier emails (DHL/FedEx/UPS) — the vendor is whoever shipped the package, not the carrier. Search by order/tracking number to find the real vendor's transaction.
 
-CRITICAL RULES:
-- If the snippet is empty, very short, or contains only invisible characters (spaces, ‌, ‎), you MUST use get_email_body — the actual content is likely in the HTML body
-- If the subject clearly indicates a transaction (order, commande, facture, receipt, expédié, shipped, annulation, cancellation) but snippet has no useful data, ALWAYS fetch the body before deciding
-- NEVER invent or hallucinate data. If you can't find an amount, leave it null and set status='partial'
-- Amounts must be the exact number from the email, not estimated
-- Currency: detect from symbols (€=EUR, $=USD, £=GBP) or context
-- Date: prefer the transaction date from email content over the email send date
+WHAT TO IGNORE (mark as 'ignored'):
+- Newsletters, marketing, promotions, security alerts, verification codes, conversations
+- Subscription welcome emails with no amount — NOT transactions
 
-DEDUPLICATION — VERY IMPORTANT:
-- Before saving a transaction, check if a transaction already exists for the same order_number or invoice_number using search_transactions
-- Multiple emails about the same order (confirmation, shipping, delivered) should UPDATE the existing transaction, not create duplicates
-- For shipping updates on an existing order, update the existing transaction's type rather than creating a new one
+DATA EXTRACTION:
+- Extract: vendor_name, amount, currency (€=EUR, $=USD, £=GBP), transaction_date (YYYY-MM-DD), invoice_number, order_number, type, description
+- status='complete' if vendor + amount + date are known, otherwise 'partial'
+- confidence: 0.0-1.0 for how sure you are it's a real transaction
+- NEVER invent data. No amount found = null + status='partial'
+- Prefer transaction date from email content over email send date
 
-TRANSACTION LIFECYCLE & CORRELATION:
-- Multiple emails about the same order (confirmation -> shipping -> delivered) represent ONE transaction lifecycle. Find the existing transaction and update its type/status rather than creating new ones.
-- A receipt email and a payment failed email for the same amount from the same vendor on the same day are SEPARATE transactions (one succeeded, one failed) — do NOT merge them.
-- For shipping-only emails with no amount, try to correlate with an existing order from the same vendor using search_transactions. If found, don't create a new transaction — the shipping info belongs to the existing order.
-- DHL/FedEx/UPS shipping emails should be correlated to the vendor who shipped, not to the carrier itself. Use search_transactions to find an order with a matching tracking/order number.
+EMPTY SNIPPETS:
+- If snippet is empty/blank but subject suggests a transaction (order, shipped, facture, annulation, etc.), ALWAYS use get_email_body first
 
-BATCH PROCESSING:
-- Process ALL emails in the batch — either save a transaction or mark as ignored
-- You can save multiple transactions at once using save_transactions
-- You can mark multiple emails as ignored at once using mark_emails_processed
-- Be efficient: group ignored emails in a single mark_emails_processed call"""
+EFFICIENCY:
+- Process ALL emails in the batch. Group ignored emails in a single mark_emails_processed call."""
 
 
 # --- Tool execution ---
@@ -681,6 +672,28 @@ def _call_api_with_retry(client, **kwargs):
                 raise
 
 
+def _get_existing_transactions_summary(user):
+    """Build a short summary of existing transactions for the agent context."""
+    txs = Transaction.objects.filter(user=user).order_by('-transaction_date')[:50]
+    if not txs:
+        return ""
+    summary = []
+    for t in txs:
+        amt = str(t.amount) if t.amount else '?'
+        summary.append({
+            'id': t.id,
+            'vendor': t.vendor_name,
+            'type': t.type,
+            'amount': amt,
+            'currency': t.currency,
+            'date': str(t.transaction_date) if t.transaction_date else '?',
+            'order': t.order_number or '',
+            'invoice': t.invoice_number or '',
+            'status': t.status,
+        })
+    return json.dumps(summary, ensure_ascii=False)
+
+
 def _run_agent_on_batch(client, user, emails_data, batch_stats, rate_limiter=None):
     """
     Run a single agent session on a small batch of emails.
@@ -688,19 +701,25 @@ def _run_agent_on_batch(client, user, emails_data, batch_stats, rate_limiter=Non
     Each thread should pass its own Anthropic client instance.
     batch_stats is a local dict for this batch (aggregated by caller).
     """
-    # Build the email list directly in the prompt (no tool call needed)
     emails_text = json.dumps(emails_data, default=str, ensure_ascii=False)
 
+    # Give the agent context about existing transactions so it can correlate
+    existing_txs = _get_existing_transactions_summary(user)
+    context_block = ""
+    if existing_txs:
+        context_block = (
+            f"\n\nEXISTING TRANSACTIONS (already saved — update these instead of creating duplicates):\n"
+            f"{existing_txs}\n"
+        )
+
     user_msg = (
-        f"Here are {len(emails_data)} emails to classify. For each one, decide if it's transactional "
-        f"(invoice, receipt, order, payment, shipping, refund, cancellation, subscription) or not.\n"
-        f"- If transactional: use save_transactions to save extracted data, then mark_emails_processed with status='processed'\n"
-        f"- If NOT transactional (newsletter, notification, conversation, security alert, verification code, marketing): mark_emails_processed with status='ignored'\n"
-        f"- IMPORTANT: If a snippet is empty/blank but the subject suggests a transaction (commande, order, shipped, facture, etc.), ALWAYS use get_email_body to fetch the content\n"
-        f"- SEARCH BEFORE CREATING: Before saving a new transaction, ALWAYS use search_transactions to check if one already exists for the same order/invoice number or same vendor — UPDATE instead of creating duplicates\n"
-        f"- SHIPPING CORRELATION: For shipping/delivery emails, search for the original order from the same vendor before creating a new transaction. If found, update the existing one.\n"
-        f"- CARRIER EMAILS: If a shipping email is from DHL/FedEx/UPS/etc., the vendor is NOT the carrier — search for the actual vendor's order using the tracking or order number.\n"
-        f"- Process ALL emails — don't skip any\n\n"
+        f"Classify these {len(emails_data)} emails. For each:\n"
+        f"- If transactional: save_transactions (or update existing), then mark as 'processed'\n"
+        f"- If not transactional: mark as 'ignored'\n"
+        f"- IMPORTANT: Check the existing transactions below. If an email relates to an existing transaction "
+        f"(same vendor, same order, same amount+date), UPDATE it — do NOT create a duplicate.\n"
+        f"- Process every email.\n"
+        f"{context_block}\n"
         f"Emails:\n{emails_text}"
     )
 
@@ -950,5 +969,10 @@ def classify_emails(user):
                 f'updated: {stats["transactions_updated"]}, '
                 f'emails processed: {stats["emails_processed"]}, '
                 f'ignored: {stats["emails_ignored"]}')
+
+    # Post-processing: merge duplicate/fragmented transactions
+    merge_stats = merge_related_transactions(user)
+    stats["merge_merged"] = merge_stats["merged"]
+    stats["merge_remaining"] = merge_stats["remaining"]
 
     return stats

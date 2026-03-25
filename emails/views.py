@@ -285,6 +285,17 @@ class EmailListView(ListAPIView):
         return qs
 
 
+@method_decorator(csrf_exempt, name='dispatch')
+class TransactionMergeView(APIView):
+    """POST /api/emails/merge/ — run post-processing merge on transactions."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .services.merge import merge_related_transactions
+        result = merge_related_transactions(request.user)
+        return Response(result)
+
+
 class TransactionListView(ListAPIView):
     """GET /api/emails/transactions/ — list extracted transactions."""
     serializer_class = TransactionSerializer

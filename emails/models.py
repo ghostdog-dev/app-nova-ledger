@@ -46,6 +46,7 @@ class Transaction(models.Model):
         PAYMENT = 'payment'
         SHIPPING = 'shipping'
         REFUND = 'refund'
+        CANCELLATION = 'cancellation'
         SUBSCRIPTION = 'subscription'
         OTHER = 'other'
 
