@@ -1,13 +1,15 @@
 """
-Multi-pass email classification pipeline.
+Multi-pass email processing pipeline with worker/verifier pattern.
 
-Architecture:
-  1. Prefilter (rule-based, already exists)
-  2. Pass 1 -- TRIAGE: "Is this email transactional? yes/no" (fast, big batches of 40)
-  3. Pass 2 -- EXTRACTION: "Extract structured data from this transactional email" (smaller batches of 15, may fetch body)
-  4. Pass 3 -- CORRELATION: "These transactions from the same vendor -- should they be merged?" (per-vendor groups)
-  5. Pass 4 -- VERIFICATION: "Review all transactions for duplicates, false positives, missing data" (single call)
-  6. Return final stats
+Architecture (4 passes):
+  Pass 1 — TRIAGE:      classify emails as transactional or not (batches of 40, JSON)
+  Pass 2 — EXTRACTION:  extract structured data (batches of 15, tool_use for body fetch)
+  Pass 3 — CORRELATION: per-vendor group, suggest merges (JSON)
+  Pass 4 — COMPUTATION: pure Python — compute derivable tax fields (no LLM)
+
+Each of Passes 1-3 follows a WORKER + VERIFIER pattern:
+  - Worker: does the main work (LLM call)
+  - Verifier: independent LLM call reviewing worker output (fresh context, no self-confirmation)
 """
 
 import json
@@ -18,6 +20,7 @@ import threading
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from decimal import Decimal
 
 import anthropic
 from django.conf import settings
@@ -31,12 +34,14 @@ from emails.services.agent import (
     _normalize_vendor_name,
 )
 from emails.services.merge import merge_related_transactions
-# prefilter removed — triage IA handles everything
 from emails.services.token_refresh import get_valid_token
 
 logger = logging.getLogger(__name__)
 
-# --- Constants ---
+
+# ============================================================
+# CONSTANTS
+# ============================================================
 
 TRIAGE_BATCH_SIZE = 40
 TRIAGE_MAX_CONCURRENT = 3
@@ -49,7 +54,114 @@ RETRY_BASE_DELAY = 2  # seconds
 
 MODEL = "claude-haiku-4-5-20251001"
 
-# --- Tool definitions for extraction pass (subset of agent.py tools) ---
+
+# ============================================================
+# PROMPTS
+# ============================================================
+
+# --- Pass 1: Triage ---
+
+TRIAGE_WORKER_PROMPT = (
+    "For each email, answer: is this a real financial event "
+    "(money charged, order placed, goods shipped, refund issued)?\n\n"
+    "Transactional: invoice, receipt, order, payment (including failed), shipping, "
+    "refund, cancellation of a paid order, subscription charge.\n\n"
+    "Not transactional: newsletter, notification, conversation, security alert, "
+    "marketing, welcome email without charge, free trial.\n\n"
+    "Return JSON array: [{\"id\": <email_id>, \"transactional\": true/false}]\n"
+    "No other text."
+)
+
+TRIAGE_VERIFIER_PROMPT = (
+    "Review these triage decisions. Flag any obvious errors.\n"
+    "- Emails about order cancellation/annulation SHOULD be transactional.\n"
+    "- Failed payment notifications SHOULD be transactional.\n"
+    "- Newsletters/marketing SHOULD NOT be transactional even if they contain "
+    "words like 'order' or 'payment'.\n\n"
+    "Decisions: {decisions}\n\n"
+    "Return corrections: "
+    "[{{\"id\": <email_id>, \"should_be\": true/false, \"reason\": \"...\"}}] "
+    "or [] if all correct.\n"
+    "No other text."
+)
+
+# --- Pass 2: Extraction ---
+
+EXTRACTION_SYSTEM_PROMPT = (
+    "You are a financial data extractor for an accounting tool. For each email, extract ALL available data.\n\n"
+    "REQUIRED fields: vendor_name, amount (TTC), currency, transaction_date (YYYY-MM-DD), "
+    "type (invoice/receipt/order/payment/shipping/refund/cancellation/subscription/other), description.\n\n"
+    "EXTRACT EVERYTHING available:\n"
+    "- invoice_number, order_number, payment_reference (transaction ID from payment processor)\n"
+    "- payment_method (CB, Mastercard, Visa, PayPal, virement, Link, Apple Pay, etc.)\n"
+    "- amount_tax_excl (HT), tax_amount (TVA), tax_rate (e.g. 20.0 for 20%)\n"
+    "- items: list of {name, quantity, unit_price} -- WHAT was purchased\n\n"
+    "ALWAYS use get_email_body for orders, receipts, and invoices to extract items, "
+    "payment details, and tax breakdown.\n"
+    "Extract ALL available data. For line items, extract name, quantity, unit_price.\n\n"
+    "Failed payments: keep as type='payment', add 'FAILED' or 'UNSUCCESSFUL' in description.\n\n"
+    "RULES:\n"
+    "- If the snippet is empty or missing amounts: use get_email_body\n"
+    "- Set status='complete' if you have vendor + amount + date, otherwise 'partial'\n"
+    "- confidence: 0.0-1.0 for how sure you are this is a real transaction\n"
+    "- NEVER invent data. No amount found = null + status='partial'\n"
+    "- Save with save_transactions, then mark ALL emails as processed\n"
+    "- Process every email in the batch"
+)
+
+EXTRACTION_VERIFIER_PROMPT = (
+    "Review these extracted transactions. Flag issues:\n"
+    "- Amount seems wrong (e.g. negative, unreasonably large)?\n"
+    "- Items don't add up to the total amount?\n"
+    "- Date is in the future or very old?\n"
+    "- Type doesn't match description (e.g. type='order' but description says 'cancellation')?\n"
+    "- Missing amount but it should be extractable from description?\n\n"
+    "Transactions: {transactions}\n\n"
+    "Return corrections: "
+    "[{{\"id\": <transaction_id>, \"field\": \"<field_name>\", \"correct_value\": <value>, \"reason\": \"...\"}}] "
+    "or [] if all correct.\n"
+    "No other text."
+)
+
+# --- Pass 3: Correlation ---
+
+CORRELATION_PROMPT_TEMPLATE = (
+    "Here are {count} transactions from vendor \"{vendor}\". Your job: identify which ones "
+    "represent the SAME purchase and should be merged into one.\n\n"
+    "MERGE RULES:\n"
+    "- Same order number -> MERGE (order + shipping + delivery = one purchase)\n"
+    "- Same amount + same date + same vendor -> MERGE (receipt and payment notification = same charge)\n"
+    "- Shipping email (no amount) + order email (has amount) from same vendor within 3 days -> MERGE\n"
+    "- A 'subscription' with no amount on the same date as a 'payment' with an amount -> MERGE\n"
+    "- A 'cancellation' with no amount is NOT a transaction -- mark for deletion (delete_id, keep_id=null)\n\n"
+    "DO NOT MERGE:\n"
+    "- Different order numbers = different purchases\n"
+    "- Different amounts on different dates = different charges\n"
+    "- A payment of 108EUR and a payment of 216EUR = distinct, even from the same vendor\n\n"
+    "Return a JSON array:\n"
+    '[{{"keep_id": <id_to_keep>, "delete_id": <id_to_remove>, "reason": "explanation"}}]\n'
+    "To delete a non-transaction (e.g. cancellation notification with no amount):\n"
+    '[{{"keep_id": null, "delete_id": <id_to_delete>, "reason": "not a real transaction"}}]\n'
+    "If all are distinct real transactions, return: []\n\n"
+    "Transactions:\n{transactions_json}"
+)
+
+CORRELATION_VERIFIER_PROMPT = (
+    "Review these merge instructions for vendor '{vendor}'.\n"
+    "RULES: Different order_numbers = NEVER merge. "
+    "Same amount + same date + same vendor = likely same.\n\n"
+    "Merge instructions: {instructions}\n"
+    "Original transactions: {transactions}\n\n"
+    "Return: 'approved' if all correct, or "
+    "[{{\"keep_id\": <id>, \"delete_id\": <id>, \"action\": \"reject\", \"reason\": \"...\"}}] "
+    "for incorrect merges.\n"
+    "No other text."
+)
+
+
+# ============================================================
+# TOOL DEFINITIONS (Pass 2 — Extraction)
+# ============================================================
 
 EXTRACTION_TOOLS = [
     {
@@ -68,7 +180,9 @@ EXTRACTION_TOOLS = [
                 },
             },
             "required": ["email_id"],
+            "additionalProperties": False,
         },
+        "strict": True,
     },
     {
         "name": "save_transactions",
@@ -91,13 +205,16 @@ EXTRACTION_TOOLS = [
                             },
                             "type": {
                                 "type": "string",
-                                "enum": ["invoice", "receipt", "order", "payment",
-                                         "shipping", "refund", "cancellation", "subscription", "other"],
+                                "enum": [
+                                    "invoice", "receipt", "order", "payment",
+                                    "shipping", "refund", "cancellation",
+                                    "subscription", "other",
+                                ],
                             },
                             "vendor_name": {"type": "string"},
                             "amount": {
                                 "type": "number",
-                                "description": "Transaction amount. Null if unknown.",
+                                "description": "Transaction amount (TTC). Null if unknown.",
                             },
                             "currency": {
                                 "type": "string",
@@ -109,6 +226,19 @@ EXTRACTION_TOOLS = [
                             },
                             "invoice_number": {"type": "string"},
                             "order_number": {"type": "string"},
+                            "description": {
+                                "type": "string",
+                                "description": "Brief description of what the transaction is about.",
+                            },
+                            "confidence": {
+                                "type": "number",
+                                "description": "Your confidence 0.0-1.0 that this is a real transaction.",
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["partial", "complete"],
+                                "description": "complete if vendor+amount+date are known, partial otherwise.",
+                            },
                             "amount_tax_excl": {
                                 "type": "number",
                                 "description": "Amount excluding tax (HT). Null if unknown.",
@@ -140,28 +270,19 @@ EXTRACTION_TOOLS = [
                                         "unit_price": {"type": "number"},
                                     },
                                     "required": ["name"],
+                                    "additionalProperties": False,
                                 },
-                            },
-                            "description": {
-                                "type": "string",
-                                "description": "Brief description of what the transaction is about.",
-                            },
-                            "confidence": {
-                                "type": "number",
-                                "description": "Your confidence 0.0-1.0 that this is a real transaction.",
-                            },
-                            "status": {
-                                "type": "string",
-                                "enum": ["partial", "complete"],
-                                "description": "complete if vendor+amount+date are known, partial otherwise.",
                             },
                         },
                         "required": ["email_id", "type", "vendor_name", "confidence", "status"],
+                        "additionalProperties": False,
                     },
                 },
             },
             "required": ["transactions"],
+            "additionalProperties": False,
         },
+        "strict": True,
     },
     {
         "name": "mark_emails_processed",
@@ -184,37 +305,11 @@ EXTRACTION_TOOLS = [
                 },
             },
             "required": ["email_ids", "status"],
+            "additionalProperties": False,
         },
+        "strict": True,
     },
 ]
-
-EXTRACTION_SYSTEM_PROMPT = (
-    "You are a financial data extractor for an accounting tool. For each email, extract ALL available data.\n\n"
-    "REQUIRED fields: vendor_name, amount (TTC), currency, transaction_date (YYYY-MM-DD), "
-    "type (invoice/receipt/order/payment/shipping/refund/cancellation/subscription/other), description.\n\n"
-    "EXTRACT EVERYTHING available:\n"
-    "- invoice_number, order_number, payment_reference (transaction ID from payment processor)\n"
-    "- payment_method (CB, Mastercard, Visa, PayPal, virement, Link, Apple Pay, etc.)\n"
-    "- amount_tax_excl (HT), tax_amount (TVA), tax_rate (e.g. 20.0 for 20%)\n"
-    "- items: list of {name, quantity, unit_price} — WHAT was purchased\n\n"
-    "CALCULATIONS — compute what you can, NEVER invent:\n"
-    "- If you have amount (TTC) and tax_amount (TVA): compute amount_tax_excl = amount - tax_amount\n"
-    "- If you have amount (TTC) and tax_rate: compute tax_amount = amount * tax_rate / (100 + tax_rate), then amount_tax_excl = amount - tax_amount\n"
-    "- If you have amount_tax_excl and tax_amount: compute amount = amount_tax_excl + tax_amount\n"
-    "- Round to 2 decimal places\n"
-    "- ONLY calculate if you have real numbers from the email. NEVER guess a tax rate.\n\n"
-    "FAILED PAYMENTS: Keep them as transactions with type='payment'. "
-    "Add 'FAILED' or 'UNSUCCESSFUL' in the description so they can be tracked. "
-    "They represent real billing events even if money didn't move.\n\n"
-    "RULES:\n"
-    "- For order confirmations, receipts, and invoices: ALWAYS use get_email_body to extract items, payment details, and tax breakdown\n"
-    "- If the snippet is empty or missing amounts: use get_email_body\n"
-    "- Set status='complete' if you have vendor + amount + date, otherwise 'partial'\n"
-    "- confidence: 0.0-1.0 for how sure you are this is a real transaction\n"
-    "- NEVER invent data. No amount found = null + status='partial'\n"
-    "- Save with save_transactions, then mark ALL emails as processed\n"
-    "- Process every email in the batch"
-)
 
 EXTRACTION_TOOL_HANDLERS = {
     'get_email_body': _execute_get_email_body,
@@ -223,7 +318,9 @@ EXTRACTION_TOOL_HANDLERS = {
 }
 
 
-# --- Helpers ---
+# ============================================================
+# HELPERS
+# ============================================================
 
 def _get_api_key():
     """Get the Anthropic API key from settings or environment."""
@@ -292,43 +389,59 @@ def _call_api_with_retry(client, **kwargs):
                 raise
 
 
-# ============================================================
-# PASS 1 — TRIAGE
-# ============================================================
+def _get_response_text(response):
+    """Extract text content from an Anthropic API response."""
+    text = ""
+    for block in response.content:
+        if hasattr(block, 'text') and block.text:
+            text += block.text
+    return text
 
-TRIAGE_PROMPT = (
-    "For each email, answer: does this email confirm a REAL financial event (money was charged, "
-    "an order was placed, goods were shipped, a refund was issued)?\n\n"
-    "TRANSACTIONAL (true) — money moved or goods moved:\n"
-    "- Invoice/receipt with an amount charged\n"
-    "- Order confirmation (placed and will be charged)\n"
-    "- Payment succeeded or failed (an actual charge attempt)\n"
-    "- Shipping/delivery of a purchased item\n"
-    "- Refund or cancellation of an order (even without amount — the order itself had value)\n"
-    "- Order cancellation or article cancellation from a store (e.g. 'annulation de commande')\n"
-    "- Subscription renewal/charge with an amount\n\n"
-    "NOT TRANSACTIONAL (false) — no money moved:\n"
-    "- Welcome to a service / account created (no charge mentioned)\n"
-    "- Free trial started or ended\n"
-    "- Password reset, verification code, security alert\n"
-    "- Newsletter, marketing, promotional offer\n"
-    "- Service notification (workspace update, feature announcement, usage report)\n"
-    "- Conversation, support ticket, personal email\n"
-    "- Subscription cancelled for a FREE service (no payment was ever made)\n"
-    "- App permission requests, account migration notices\n\n"
-    "When in doubt, mark as false. EXCEPT for order cancellations — always mark those as true.\n\n"
-    "Respond with ONLY a JSON array:\n"
-    '[{"id": <email_id>, "transactional": true/false}]\n'
-    "No other text."
-)
 
+def _verify(client, prompt, rate_limiter):
+    """
+    Run a verifier LLM call. Returns parsed JSON corrections or empty list.
+    Verifier has fresh context — only sees the output to verify.
+    """
+    if rate_limiter:
+        rate_limiter.wait_if_needed()
+
+    try:
+        response = _call_api_with_retry(
+            client,
+            model=MODEL,
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        if rate_limiter and hasattr(response, 'usage') and response.usage:
+            rate_limiter.record_usage(response.usage.input_tokens)
+
+        response_text = _get_response_text(response)
+
+        # Check for "approved" (used by correlation verifier)
+        if response_text.strip().lower() == 'approved':
+            return 'approved'
+
+        corrections = _extract_json(response_text)
+        if corrections is None:
+            return []
+        return corrections
+
+    except Exception as e:
+        logger.error(f'Verifier error: {e}')
+        return []
+
+
+# ============================================================
+# PASS 1 — TRIAGE (Worker + Verifier)
+# ============================================================
 
 def _triage_single_batch(client, emails_data, rate_limiter):
     """
-    Run triage on a single batch of emails.
-    Returns (transactional_ids, ignored_ids).
+    Worker: Run triage on a single batch of emails.
+    Returns list of dicts: [{id, transactional: bool}].
     """
-    # Build minimal email descriptions
     email_lines = []
     for e in emails_data:
         email_lines.append(
@@ -337,7 +450,7 @@ def _triage_single_batch(client, emails_data, rate_limiter):
         )
     emails_text = "\n".join(email_lines)
 
-    user_msg = f"{TRIAGE_PROMPT}\nEmails ({len(emails_data)}):\n{emails_text}"
+    user_msg = f"{TRIAGE_WORKER_PROMPT}\nEmails ({len(emails_data)}):\n{emails_text}"
 
     if rate_limiter:
         rate_limiter.wait_if_needed()
@@ -352,74 +465,117 @@ def _triage_single_batch(client, emails_data, rate_limiter):
     if rate_limiter and hasattr(response, 'usage') and response.usage:
         rate_limiter.record_usage(response.usage.input_tokens)
 
-    # Extract text response
-    response_text = ""
-    for block in response.content:
-        if hasattr(block, 'text') and block.text:
-            response_text += block.text
-
-    # Parse JSON
+    response_text = _get_response_text(response)
     results = _extract_json(response_text)
+
     if results is None:
-        logger.error(f'Triage: failed to parse JSON response: {response_text[:500]}')
+        logger.error(f'[Triage] Failed to parse JSON response: {response_text[:500]}')
         # Fail safe: treat all as transactional so they proceed to extraction
-        return [e["id"] for e in emails_data], []
+        return [{"id": e["id"], "transactional": True} for e in emails_data]
 
-    transactional_ids = []
-    ignored_ids = []
-
-    # Build a set of valid email IDs for this batch
+    # Ensure all emails in the batch are accounted for
     valid_ids = {e["id"] for e in emails_data}
+    mentioned_ids = {item.get("id") for item in results}
 
-    for item in results:
-        email_id = item.get("id")
-        is_transactional = item.get("transactional", False)
-
-        if email_id not in valid_ids:
-            logger.warning(f'Triage: LLM returned unknown email id {email_id}, skipping')
-            continue
-
-        if is_transactional:
-            transactional_ids.append(email_id)
-        else:
-            ignored_ids.append(email_id)
-
-    # Any IDs from the batch not mentioned by the LLM — treat as transactional (safe default)
-    mentioned_ids = set(transactional_ids) | set(ignored_ids)
     for e in emails_data:
         if e["id"] not in mentioned_ids:
-            logger.warning(f'Triage: email {e["id"]} not in LLM response, treating as transactional')
-            transactional_ids.append(e["id"])
+            logger.warning(f'[Triage] Email {e["id"]} not in LLM response, treating as transactional')
+            results.append({"id": e["id"], "transactional": True})
 
-    return transactional_ids, ignored_ids
+    # Filter out unknown IDs
+    results = [r for r in results if r.get("id") in valid_ids]
+
+    return results
 
 
 def _process_triage_batch(api_key, emails_data, batch_num, total_batches, rate_limiter):
-    """Process a single triage batch in its own thread. Returns (transactional_ids, ignored_ids)."""
+    """Process a single triage batch in its own thread. Returns list of triage decisions."""
     thread_id = threading.current_thread().name
     logger.info(
-        f'[Triage] Batch {batch_num}/{total_batches} — {len(emails_data)} emails (thread-{thread_id})'
+        f'[Triage] Batch {batch_num}/{total_batches} -- {len(emails_data)} emails (thread-{thread_id})'
     )
 
     client = anthropic.Anthropic(api_key=api_key)
 
     try:
-        transactional_ids, ignored_ids = _triage_single_batch(client, emails_data, rate_limiter)
+        decisions = _triage_single_batch(client, emails_data, rate_limiter)
+        transactional = sum(1 for d in decisions if d.get("transactional"))
+        ignored = len(decisions) - transactional
         logger.info(
-            f'[Triage] Batch {batch_num}/{total_batches} done — '
-            f'{len(transactional_ids)} transactional, {len(ignored_ids)} ignored (thread-{thread_id})'
+            f'[Triage] Batch {batch_num}/{total_batches} done -- '
+            f'{transactional} transactional, {ignored} ignored (thread-{thread_id})'
         )
-        return transactional_ids, ignored_ids
+        return decisions
     except Exception as e:
         logger.error(f'[Triage] Batch {batch_num} error (thread-{thread_id}): {e}')
         # Fail safe: treat all as transactional
-        return [em["id"] for em in emails_data], []
+        return [{"id": em["id"], "transactional": True} for em in emails_data]
 
 
-def _run_triage_pass(user, api_key):
+def _run_triage_verifier(client, all_decisions, emails_data, rate_limiter):
     """
-    Pass 1: Triage — classify emails as transactional or not using fast batched LLM calls.
-    Marks non-transactional as 'ignored', transactional as 'triage_passed'.
+    Verifier: independent LLM call reviewing worker's triage decisions.
+    Returns list of corrections: [{id, should_be, reason}].
+    """
+    if not all_decisions:
+        return []
+
+    # Build compact decisions with enough context for the verifier
+    emails_by_id = {e["id"]: e for e in emails_data}
+    decisions_with_context = []
+    for d in all_decisions:
+        email = emails_by_id.get(d["id"], {})
+        decisions_with_context.append({
+            "id": d["id"],
+            "transactional": d.get("transactional", False),
+            "subject": email.get("subject", ""),
+            "from": email.get("from_address", ""),
+            "snippet": email.get("snippet", "")[:80],
+        })
+
+    prompt = TRIAGE_VERIFIER_PROMPT.format(
+        decisions=json.dumps(decisions_with_context, ensure_ascii=False)
+    )
+
+    logger.info(f'[Triage-Verify] Reviewing {len(all_decisions)} triage decisions')
+    corrections = _verify(client, prompt, rate_limiter)
+
+    if isinstance(corrections, list) and corrections:
+        logger.info(f'[Triage-Verify] Found {len(corrections)} corrections')
+    else:
+        logger.info('[Triage-Verify] All decisions approved')
+        corrections = []
+
+    return corrections
+
+
+def _apply_triage_corrections(all_decisions, corrections):
+    """Apply verifier corrections to triage decisions in place."""
+    if not corrections:
+        return
+
+    corrections_map = {c["id"]: c["should_be"] for c in corrections if "id" in c and "should_be" in c}
+
+    for decision in all_decisions:
+        if decision["id"] in corrections_map:
+            old_val = decision.get("transactional")
+            new_val = corrections_map[decision["id"]]
+            if old_val != new_val:
+                reason = next(
+                    (c.get("reason", "") for c in corrections if c.get("id") == decision["id"]),
+                    ""
+                )
+                logger.info(
+                    f'[Triage-Verify] Corrected email {decision["id"]}: '
+                    f'{old_val} -> {new_val} ({reason})'
+                )
+                decision["transactional"] = new_val
+
+
+def _run_triage_pass(user, api_key, rate_limiter):
+    """
+    Pass 1: Triage -- classify emails as transactional or not.
+    Worker classifies in batches, Verifier reviews decisions.
     Returns stats dict.
     """
     logger.info('[Triage] === PASS 1 START ===')
@@ -446,17 +602,18 @@ def _run_triage_pass(user, api_key):
         })
 
     # Split into batches
-    all_batches = []
-    for i in range(0, len(emails_data), TRIAGE_BATCH_SIZE):
-        all_batches.append(emails_data[i:i + TRIAGE_BATCH_SIZE])
-
+    all_batches = [
+        emails_data[i:i + TRIAGE_BATCH_SIZE]
+        for i in range(0, len(emails_data), TRIAGE_BATCH_SIZE)
+    ]
     total_batches = len(all_batches)
-    logger.info(f'[Triage] {len(emails_data)} emails in {total_batches} batches (max {TRIAGE_MAX_CONCURRENT} concurrent)')
+    logger.info(
+        f'[Triage] {len(emails_data)} emails in {total_batches} batches '
+        f'(max {TRIAGE_MAX_CONCURRENT} concurrent)'
+    )
 
-    rate_limiter = RateLimiter()
-
-    all_transactional_ids = []
-    all_ignored_ids = []
+    # --- Worker: parallel triage batches ---
+    all_decisions = []
 
     with ThreadPoolExecutor(max_workers=TRIAGE_MAX_CONCURRENT) as executor:
         futures = {}
@@ -473,42 +630,49 @@ def _run_triage_pass(user, api_key):
         for future in as_completed(futures):
             batch_num = futures[future]
             try:
-                transactional_ids, ignored_ids = future.result()
-                all_transactional_ids.extend(transactional_ids)
-                all_ignored_ids.extend(ignored_ids)
+                decisions = future.result()
+                all_decisions.extend(decisions)
             except Exception as e:
                 logger.error(f'[Triage] Batch {batch_num} raised unexpected exception: {e}')
 
+    # --- Verifier: review all decisions ---
+    client = anthropic.Anthropic(api_key=api_key)
+    corrections = _run_triage_verifier(client, all_decisions, emails_data, rate_limiter)
+    _apply_triage_corrections(all_decisions, corrections)
+
     # Update statuses in DB
-    if all_ignored_ids:
-        Email.objects.filter(user=user, id__in=all_ignored_ids).update(
+    transactional_ids = [d["id"] for d in all_decisions if d.get("transactional")]
+    ignored_ids = [d["id"] for d in all_decisions if not d.get("transactional")]
+
+    if ignored_ids:
+        Email.objects.filter(user=user, id__in=ignored_ids).update(
             status=Email.Status.IGNORED
         )
-    if all_transactional_ids:
-        Email.objects.filter(user=user, id__in=all_transactional_ids).update(
+    if transactional_ids:
+        Email.objects.filter(user=user, id__in=transactional_ids).update(
             status=Email.Status.TRIAGE_PASSED
         )
 
     logger.info(
         f'[Triage] === PASS 1 DONE === '
-        f'{len(all_transactional_ids)} transactional, {len(all_ignored_ids)} ignored '
+        f'{len(transactional_ids)} transactional, {len(ignored_ids)} ignored '
         f'out of {len(emails_data)}'
     )
 
     return {
-        'triage_transactional': len(all_transactional_ids),
-        'triage_ignored': len(all_ignored_ids),
+        'triage_transactional': len(transactional_ids),
+        'triage_ignored': len(ignored_ids),
         'triage_total': len(emails_data),
     }
 
 
 # ============================================================
-# PASS 2 — EXTRACTION
+# PASS 2 — EXTRACTION (Worker + Verifier)
 # ============================================================
 
 def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limiter):
     """
-    Run extraction on a single batch of triage-passed emails using tool_use.
+    Worker: Run extraction on a single batch of triage-passed emails using tool_use.
     Modifies batch_stats in place.
     """
     emails_text = json.dumps(emails_data, default=str, ensure_ascii=False)
@@ -517,7 +681,8 @@ def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limite
         f"Extract transaction data from these {len(emails_data)} transactional emails.\n"
         f"For each email, extract: vendor_name, amount, currency, transaction_date, type, "
         f"invoice_number, order_number, description. "
-        f"Also extract if present: amount_tax_excl, tax_amount, tax_rate, payment_method, payment_reference, items.\n"
+        f"Also extract if present: amount_tax_excl, tax_amount, tax_rate, payment_method, "
+        f"payment_reference, items.\n"
         f"If the snippet is empty or missing amounts, use get_email_body to fetch the full content.\n"
         f"Save each transaction with save_transactions.\n"
         f"Mark all emails as processed when done.\n\n"
@@ -550,7 +715,6 @@ def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limite
         iteration += 1
         logger.info(f'  [Extraction] Iteration {iteration} | stop_reason={response.stop_reason}')
 
-        # Log thinking
         for block in response.content:
             if hasattr(block, 'text') and block.text:
                 logger.info(f'  [Extraction] Agent: {block.text[:300]}')
@@ -566,14 +730,17 @@ def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limite
                 tool_name = block.name
                 tool_input = block.input
 
-                logger.info(f'  [Extraction] TOOL: {tool_name}({json.dumps(tool_input, default=str)[:300]})')
+                logger.info(
+                    f'  [Extraction] TOOL: {tool_name}({json.dumps(tool_input, default=str)[:300]})'
+                )
 
                 handler = EXTRACTION_TOOL_HANDLERS.get(tool_name)
                 if handler:
                     try:
                         result = handler(user, tool_input)
                         logger.info(
-                            f'  [Extraction] RESULT: {tool_name} -> {json.dumps(result, default=str)[:300]}'
+                            f'  [Extraction] RESULT: {tool_name} -> '
+                            f'{json.dumps(result, default=str)[:300]}'
                         )
 
                         if tool_name == 'save_transactions':
@@ -621,7 +788,8 @@ def _process_extraction_batch(api_key, user, emails_data, batch_num, total_batch
     """Process a single extraction batch in its own thread. Returns batch_stats dict."""
     thread_id = threading.current_thread().name
     logger.info(
-        f'[Extraction] Batch {batch_num}/{total_batches} — {len(emails_data)} emails (thread-{thread_id})'
+        f'[Extraction] Batch {batch_num}/{total_batches} -- '
+        f'{len(emails_data)} emails (thread-{thread_id})'
     )
 
     client = anthropic.Anthropic(api_key=api_key)
@@ -638,19 +806,23 @@ def _process_extraction_batch(api_key, user, emails_data, batch_num, total_batch
     try:
         _extraction_single_batch(client, user, emails_data, batch_stats, rate_limiter)
     except anthropic.RateLimitError:
-        logger.warning(f'[Extraction] Rate limited on batch {batch_num} (thread-{thread_id}), waiting 60s...')
+        logger.warning(
+            f'[Extraction] Rate limited on batch {batch_num} (thread-{thread_id}), waiting 60s...'
+        )
         time.sleep(60)
         try:
             _extraction_single_batch(client, user, emails_data, batch_stats, rate_limiter)
         except Exception as e:
-            logger.error(f'[Extraction] Batch {batch_num} failed after retry (thread-{thread_id}): {e}')
+            logger.error(
+                f'[Extraction] Batch {batch_num} failed after retry (thread-{thread_id}): {e}'
+            )
             batch_stats["errors"] += 1
     except Exception as e:
         logger.error(f'[Extraction] Batch {batch_num} error (thread-{thread_id}): {e}')
         batch_stats["errors"] += 1
 
     logger.info(
-        f'[Extraction] Batch {batch_num}/{total_batches} done — '
+        f'[Extraction] Batch {batch_num}/{total_batches} done -- '
         f'created={batch_stats["transactions_created"]}, '
         f'updated={batch_stats["transactions_updated"]}, '
         f'processed={batch_stats["emails_processed"]} (thread-{thread_id})'
@@ -658,10 +830,106 @@ def _process_extraction_batch(api_key, user, emails_data, batch_num, total_batch
     return batch_stats
 
 
-def _run_extraction_pass(user, api_key):
+def _run_extraction_verifier(user, client, rate_limiter):
     """
-    Pass 2: Extraction — extract structured transaction data from triage-passed emails.
-    Uses tool_use with get_email_body, save_transactions, mark_emails_processed.
+    Verifier: independent LLM call reviewing recently extracted transactions.
+    Returns list of corrections.
+    """
+    recent_transactions = list(
+        Transaction.objects.filter(user=user).order_by('-processed_at')[:100]
+    )
+
+    if not recent_transactions:
+        return []
+
+    tx_data = []
+    for tx in recent_transactions:
+        tx_data.append({
+            'id': tx.id,
+            'type': tx.type,
+            'vendor_name': tx.vendor_name,
+            'amount': str(tx.amount) if tx.amount else None,
+            'currency': tx.currency,
+            'transaction_date': tx.transaction_date.isoformat() if tx.transaction_date else None,
+            'description': tx.description,
+            'items': tx.items,
+            'amount_tax_excl': str(tx.amount_tax_excl) if tx.amount_tax_excl else None,
+            'tax_amount': str(tx.tax_amount) if tx.tax_amount else None,
+            'tax_rate': str(tx.tax_rate) if tx.tax_rate else None,
+            'status': tx.status,
+            'confidence': tx.confidence,
+        })
+
+    prompt = EXTRACTION_VERIFIER_PROMPT.format(
+        transactions=json.dumps(tx_data, ensure_ascii=False)
+    )
+
+    logger.info(f'[Extraction-Verify] Reviewing {len(tx_data)} extracted transactions')
+    corrections = _verify(client, prompt, rate_limiter)
+
+    if isinstance(corrections, list) and corrections:
+        logger.info(f'[Extraction-Verify] Found {len(corrections)} corrections')
+    else:
+        logger.info('[Extraction-Verify] All extractions approved')
+        corrections = []
+
+    return corrections
+
+
+def _apply_extraction_corrections(user, corrections):
+    """Apply verifier corrections to extracted transactions."""
+    if not corrections:
+        return
+
+    for correction in corrections:
+        tx_id = correction.get('id')
+        field = correction.get('field')
+        correct_value = correction.get('correct_value')
+        reason = correction.get('reason', '')
+
+        if not tx_id or not field:
+            continue
+
+        try:
+            tx = Transaction.objects.get(id=tx_id, user=user)
+        except Transaction.DoesNotExist:
+            logger.warning(f'[Extraction-Verify] Transaction {tx_id} not found')
+            continue
+
+        # Only allow updating known fields
+        allowed_fields = {
+            'type', 'vendor_name', 'amount', 'currency', 'transaction_date',
+            'invoice_number', 'order_number', 'description', 'confidence',
+            'status', 'amount_tax_excl', 'tax_amount', 'tax_rate',
+            'payment_method', 'payment_reference',
+        }
+
+        if field not in allowed_fields:
+            logger.warning(f'[Extraction-Verify] Field "{field}" not allowed for correction')
+            continue
+
+        old_value = getattr(tx, field, None)
+        logger.info(
+            f'[Extraction-Verify] Correcting tx {tx_id} field "{field}": '
+            f'{old_value} -> {correct_value} ({reason})'
+        )
+
+        if field in ('amount', 'amount_tax_excl', 'tax_amount', 'tax_rate'):
+            if correct_value is not None:
+                try:
+                    correct_value = Decimal(str(correct_value))
+                except Exception:
+                    logger.warning(f'[Extraction-Verify] Cannot convert "{correct_value}" to Decimal')
+                    continue
+
+        setattr(tx, field, correct_value)
+        tx.save()
+
+
+def _run_extraction_pass(user, api_key, rate_limiter):
+    """
+    Pass 2: Extraction -- extract structured transaction data from triage-passed emails.
+    Worker extracts with tool_use, Verifier reviews results.
     Returns stats dict.
     """
     logger.info('[Extraction] === PASS 2 START ===')
@@ -698,17 +966,15 @@ def _run_extraction_pass(user, api_key):
         })
 
     # Split into batches
-    all_batches = []
-    for i in range(0, len(emails_data_all), EXTRACTION_BATCH_SIZE):
-        all_batches.append(emails_data_all[i:i + EXTRACTION_BATCH_SIZE])
-
+    all_batches = [
+        emails_data_all[i:i + EXTRACTION_BATCH_SIZE]
+        for i in range(0, len(emails_data_all), EXTRACTION_BATCH_SIZE)
+    ]
     total_batches = len(all_batches)
     logger.info(
         f'[Extraction] {len(emails_data_all)} emails in {total_batches} batches '
         f'(max {EXTRACTION_MAX_CONCURRENT} concurrent)'
     )
-
-    rate_limiter = RateLimiter()
 
     stats = {
         'extraction_transactions_created': 0,
@@ -720,6 +986,7 @@ def _run_extraction_pass(user, api_key):
     }
     stats_lock = threading.Lock()
 
+    # --- Worker: parallel extraction batches ---
     with ThreadPoolExecutor(max_workers=EXTRACTION_MAX_CONCURRENT) as executor:
         futures = {}
         for batch_idx, batch_data in enumerate(all_batches):
@@ -748,6 +1015,11 @@ def _run_extraction_pass(user, api_key):
                 with stats_lock:
                     stats['extraction_errors'] += 1
 
+    # --- Verifier: review extracted transactions ---
+    client = anthropic.Anthropic(api_key=api_key)
+    extraction_corrections = _run_extraction_verifier(user, client, rate_limiter)
+    _apply_extraction_corrections(user, extraction_corrections)
+
     logger.info(
         f'[Extraction] === PASS 2 DONE === '
         f'created={stats["extraction_transactions_created"]}, '
@@ -761,35 +1033,13 @@ def _run_extraction_pass(user, api_key):
 
 
 # ============================================================
-# PASS 3 — CORRELATION
+# PASS 3 — CORRELATION (Worker + Verifier)
 # ============================================================
 
-CORRELATION_PROMPT_TEMPLATE = (
-    "Here are {count} transactions from vendor \"{vendor}\". Your job: identify which ones "
-    "represent the SAME purchase and should be merged into one.\n\n"
-    "MERGE RULES:\n"
-    "- Same order number → MERGE (order + shipping + delivery = one purchase)\n"
-    "- Same amount + same date + same vendor → MERGE (receipt and payment notification = same charge)\n"
-    "- Shipping email (no amount) + order email (has amount) from same vendor within 3 days → MERGE\n"
-    "- A 'subscription' with no amount on the same date as a 'payment' with an amount → MERGE\n"
-    "- A 'cancellation' with no amount is NOT a transaction — mark for deletion (delete_id, keep_id=null)\n\n"
-    "DO NOT MERGE:\n"
-    "- Different order numbers = different purchases\n"
-    "- Different amounts on different dates = different charges\n"
-    "- A payment of 108€ and a payment of 216€ = distinct, even from the same vendor\n\n"
-    "Return a JSON array:\n"
-    '[{{"keep_id": <id_to_keep>, "delete_id": <id_to_remove>, "reason": "explanation"}}]\n'
-    "To delete a non-transaction (e.g. cancellation notification with no amount):\n"
-    '[{{"keep_id": null, "delete_id": <id_to_delete>, "reason": "not a real transaction"}}]\n'
-    "If all are distinct real transactions, return: []\n\n"
-    "Transactions:\n{transactions_json}"
-)
-
-
-def _run_correlation_pass(user, api_key):
+def _run_correlation_pass(user, api_key, rate_limiter):
     """
-    Pass 3: Correlation — find and merge duplicate/related transactions per vendor.
-    Uses plain JSON responses (no tool_use).
+    Pass 3: Correlation -- find and merge duplicate/related transactions per vendor.
+    Worker suggests merges, Verifier checks each per-vendor group.
     Returns stats dict.
     """
     logger.info('[Correlation] === PASS 3 START ===')
@@ -817,7 +1067,6 @@ def _run_correlation_pass(user, api_key):
     logger.info(f'[Correlation] {len(multi_groups)} vendor groups with 2+ transactions')
 
     client = anthropic.Anthropic(api_key=api_key)
-    rate_limiter = RateLimiter()
 
     total_merges = 0
     vendors_checked = 0
@@ -825,10 +1074,10 @@ def _run_correlation_pass(user, api_key):
     for vendor_name, txs in multi_groups.items():
         vendors_checked += 1
 
-        # Build transaction data for the LLM
+        # Build transaction data for the LLM (include email_subject)
         tx_data = []
         for tx in txs:
-            tx_data.append({
+            entry = {
                 'id': tx.id,
                 'type': tx.type,
                 'vendor_name': tx.vendor_name,
@@ -839,12 +1088,19 @@ def _run_correlation_pass(user, api_key):
                 'order_number': tx.order_number,
                 'description': tx.description,
                 'status': tx.status,
-            })
+            }
+            # Add email subject for extra context
+            if tx.email:
+                entry['email_subject'] = tx.email.subject
+            tx_data.append(entry)
 
+        transactions_json = json.dumps(tx_data, ensure_ascii=False, indent=2)
+
+        # --- Worker: suggest merges ---
         prompt = CORRELATION_PROMPT_TEMPLATE.format(
             count=len(txs),
             vendor=vendor_name,
-            transactions_json=json.dumps(tx_data, ensure_ascii=False, indent=2),
+            transactions_json=transactions_json,
         )
 
         if rate_limiter:
@@ -865,28 +1121,53 @@ def _run_correlation_pass(user, api_key):
             logger.error(f'[Correlation] API error for vendor "{vendor_name}": {e}')
             continue
 
-        # Extract response text
-        response_text = ""
-        for block in response.content:
-            if hasattr(block, 'text') and block.text:
-                response_text += block.text
-
+        response_text = _get_response_text(response)
         merge_instructions = _extract_json(response_text)
+
         if merge_instructions is None:
             logger.warning(
-                f'[Correlation] Could not parse JSON for vendor "{vendor_name}": {response_text[:300]}'
+                f'[Correlation] Could not parse JSON for vendor "{vendor_name}": '
+                f'{response_text[:300]}'
             )
             continue
 
         if not merge_instructions:
-            logger.info(f'[Correlation] Vendor "{vendor_name}": all {len(txs)} transactions are distinct')
+            logger.info(
+                f'[Correlation] Vendor "{vendor_name}": all {len(txs)} transactions are distinct'
+            )
             continue
 
-        # Build a lookup of transaction objects by ID
-        tx_by_id = {tx.id: tx for tx in txs}
+        # --- Verifier: check merge instructions ---
+        verifier_prompt = CORRELATION_VERIFIER_PROMPT.format(
+            vendor=vendor_name,
+            instructions=json.dumps(merge_instructions, ensure_ascii=False),
+            transactions=transactions_json,
+        )
 
-        # Execute merge instructions
+        logger.info(
+            f'[Correlation-Verify] Reviewing {len(merge_instructions)} merge instructions '
+            f'for vendor "{vendor_name}"'
+        )
+        verifier_result = _verify(client, verifier_prompt, rate_limiter)
+
+        # Apply verifier rejections
+        rejected_pairs = set()
+        if isinstance(verifier_result, list) and verifier_result:
+            for rejection in verifier_result:
+                if rejection.get('action') == 'reject':
+                    pair = (rejection.get('keep_id'), rejection.get('delete_id'))
+                    rejected_pairs.add(pair)
+                    logger.info(
+                        f'[Correlation-Verify] Rejected merge: keep={pair[0]}, '
+                        f'delete={pair[1]}, reason={rejection.get("reason", "")}'
+                    )
+        elif verifier_result == 'approved':
+            logger.info(f'[Correlation-Verify] All merges approved for vendor "{vendor_name}"')
+
+        # Execute approved merge instructions
+        tx_by_id = {tx.id: tx for tx in txs}
         deleted_ids = set()
+
         for instruction in merge_instructions:
             keep_id = instruction.get('keep_id')
             delete_id = instruction.get('delete_id')
@@ -894,6 +1175,13 @@ def _run_correlation_pass(user, api_key):
 
             if delete_id is None:
                 logger.warning(f'[Correlation] Invalid merge instruction (no delete_id): {instruction}')
+                continue
+
+            # Skip if verifier rejected this merge
+            if (keep_id, delete_id) in rejected_pairs:
+                logger.info(
+                    f'[Correlation] Skipping rejected merge: keep={keep_id}, delete={delete_id}'
+                )
                 continue
 
             if delete_id in deleted_ids:
@@ -923,17 +1211,16 @@ def _run_correlation_pass(user, api_key):
 
             if keep_id in deleted_ids:
                 logger.warning(
-                    f'[Correlation] Cannot keep transaction {keep_id} — already deleted'
+                    f'[Correlation] Cannot keep transaction {keep_id} -- already deleted'
                 )
                 continue
 
-            # Merge: keep the richer one, absorb data from the other
+            # Merge: absorb data from delete_tx into keep_tx
             logger.info(
                 f'[Correlation] Merging transaction {delete_id} into {keep_id} '
                 f'for vendor "{vendor_name}": {reason}'
             )
 
-            # Absorb fields from delete_tx into keep_tx
             if keep_tx.amount is None and delete_tx.amount is not None:
                 keep_tx.amount = delete_tx.amount
             if not keep_tx.transaction_date and delete_tx.transaction_date:
@@ -944,6 +1231,18 @@ def _run_correlation_pass(user, api_key):
                 keep_tx.invoice_number = delete_tx.invoice_number
             if not keep_tx.description and delete_tx.description:
                 keep_tx.description = delete_tx.description
+            if keep_tx.amount_tax_excl is None and delete_tx.amount_tax_excl is not None:
+                keep_tx.amount_tax_excl = delete_tx.amount_tax_excl
+            if keep_tx.tax_amount is None and delete_tx.tax_amount is not None:
+                keep_tx.tax_amount = delete_tx.tax_amount
+            if keep_tx.tax_rate is None and delete_tx.tax_rate is not None:
+                keep_tx.tax_rate = delete_tx.tax_rate
+            if not keep_tx.payment_method and delete_tx.payment_method:
+                keep_tx.payment_method = delete_tx.payment_method
+            if not keep_tx.payment_reference and delete_tx.payment_reference:
+                keep_tx.payment_reference = delete_tx.payment_reference
+            if not keep_tx.items and delete_tx.items:
+                keep_tx.items = delete_tx.items
             keep_tx.confidence = max(keep_tx.confidence, delete_tx.confidence)
 
             # Upgrade status if now complete
@@ -972,218 +1271,47 @@ def _run_correlation_pass(user, api_key):
 
 
 # ============================================================
-# PASS 4 — VERIFICATION
+# PASS 4 — COMPUTATION (Pure Python, no LLM)
 # ============================================================
 
-VERIFICATION_PROMPT = (
-    "Here is the final list of extracted transactions. Review for quality issues:\n"
-    "1. DUPLICATES: Same purchase appearing twice (same vendor + same amount + dates within 3 days). "
-    "If found, return delete instructions.\n"
-    "2. FALSE POSITIVES: Entries that are NOT real financial transactions "
-    "(service notifications, account updates with no money involved, confidence below 60%). "
-    "If found, return delete instructions.\n"
-    "3. MISSING DATA: Transactions marked 'complete' but missing critical fields. "
-    "If found, return downgrade instructions.\n\n"
-    "Return a JSON array of actions:\n"
-    '[{"action": "delete", "id": <transaction_id>, "reason": "..."},\n'
-    ' {"action": "downgrade", "id": <transaction_id>, "reason": "..."},\n'
-    ' {"action": "merge", "keep_id": <id>, "delete_id": <id>, "reason": "..."}]\n\n'
-    "CRITICAL RULES:\n"
-    "- NEVER merge transactions that have DIFFERENT order_numbers — even if they have the same amount and vendor. "
-    "Different order numbers = different purchases, period.\n"
-    "- The correlation pass (Pass 3) already reviewed these transactions. Only override its decisions if you find "
-    "a clear error. If Pass 3 said transactions are distinct, trust that unless you have strong evidence otherwise.\n\n"
-    "If everything looks good, return: []"
-)
-
-
-def _run_verification_pass(user, api_key):
+def _run_computation_pass(user):
     """
-    Pass 4: Verification — review all transactions for duplicates, false positives,
-    and missing data. Executes delete/downgrade/merge actions.
-    Returns stats dict.
+    Pass 4: Pure Python -- compute derivable tax fields. No LLM.
+    - If TTC + TVA known -> HT = TTC - TVA
+    - If TTC + tax_rate known -> TVA = TTC * rate / (100 + rate), HT = TTC - TVA
+    - If HT + TVA known -> TTC = HT + TVA
+    - Round to 2 decimals
     """
-    logger.info('[Verification] === PASS 4 START ===')
+    logger.info('[Computation] === PASS 4 START ===')
 
-    all_transactions = list(Transaction.objects.filter(user=user).order_by('id'))
+    updated = 0
+    for tx in Transaction.objects.filter(user=user):
+        changed = False
 
-    if not all_transactions:
-        logger.info('[Verification] No transactions to verify')
-        return {
-            'verification_deleted': 0,
-            'verification_downgraded': 0,
-            'verification_merged': 0,
-        }
+        # TTC + TVA known -> HT = TTC - TVA
+        if tx.amount and tx.tax_amount and not tx.amount_tax_excl:
+            tx.amount_tax_excl = (tx.amount - tx.tax_amount).quantize(Decimal('0.01'))
+            changed = True
 
-    # Build transaction data for the LLM
-    tx_data = []
-    for tx in all_transactions:
-        tx_data.append({
-            'id': tx.id,
-            'type': tx.type,
-            'status': tx.status,
-            'vendor_name': tx.vendor_name,
-            'amount': str(tx.amount) if tx.amount else None,
-            'currency': tx.currency,
-            'transaction_date': tx.transaction_date.isoformat() if tx.transaction_date else None,
-            'invoice_number': tx.invoice_number,
-            'order_number': tx.order_number,
-            'description': tx.description,
-            'confidence': tx.confidence,
-        })
+        # TTC + tax_rate known -> TVA and HT
+        if tx.amount and tx.tax_rate and not tx.tax_amount:
+            rate = tx.tax_rate / Decimal('100')
+            tx.tax_amount = (tx.amount * rate / (1 + rate)).quantize(Decimal('0.01'))
+            tx.amount_tax_excl = (tx.amount - tx.tax_amount).quantize(Decimal('0.01'))
+            changed = True
 
-    prompt = (
-        f"{VERIFICATION_PROMPT}\n\n"
-        f"Transactions ({len(tx_data)}):\n"
-        f"{json.dumps(tx_data, ensure_ascii=False, indent=2)}"
-    )
+        # HT + TVA known -> TTC = HT + TVA
+        if tx.amount_tax_excl and tx.tax_amount and not tx.amount:
+            tx.amount = (tx.amount_tax_excl + tx.tax_amount).quantize(Decimal('0.01'))
+            changed = True
 
-    client = anthropic.Anthropic(api_key=api_key)
-    rate_limiter = RateLimiter()
-
-    if rate_limiter:
-        rate_limiter.wait_if_needed()
-
-    try:
-        response = _call_api_with_retry(
-            client,
-            model=MODEL,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        if rate_limiter and hasattr(response, 'usage') and response.usage:
-            rate_limiter.record_usage(response.usage.input_tokens)
-
-    except Exception as e:
-        logger.error(f'[Verification] API error: {e}')
-        return {
-            'verification_deleted': 0,
-            'verification_downgraded': 0,
-            'verification_merged': 0,
-        }
-
-    # Extract response text
-    response_text = ""
-    for block in response.content:
-        if hasattr(block, 'text') and block.text:
-            response_text += block.text
-
-    actions = _extract_json(response_text)
-    if actions is None:
-        logger.warning(f'[Verification] Could not parse JSON response: {response_text[:500]}')
-        return {
-            'verification_deleted': 0,
-            'verification_downgraded': 0,
-            'verification_merged': 0,
-        }
-
-    if not actions:
-        logger.info('[Verification] All transactions look good, no actions needed')
-        return {
-            'verification_deleted': 0,
-            'verification_downgraded': 0,
-            'verification_merged': 0,
-        }
-
-    # Build lookup of transaction objects by ID
-    tx_by_id = {tx.id: tx for tx in all_transactions}
-
-    total_deleted = 0
-    total_downgraded = 0
-    total_merged = 0
-    deleted_ids = set()
-
-    for action_item in actions:
-        action = action_item.get('action')
-        reason = action_item.get('reason', 'verification')
-
-        if action == 'delete':
-            tx_id = action_item.get('id')
-            if tx_id is None or tx_id in deleted_ids:
-                continue
-            tx = tx_by_id.get(tx_id)
-            if not tx:
-                logger.warning(f'[Verification] Transaction {tx_id} not found for delete')
-                continue
-            logger.info(f'[Verification] Deleting transaction {tx_id} ({tx.vendor_name}): {reason}')
-            tx.delete()
-            deleted_ids.add(tx_id)
-            total_deleted += 1
-
-        elif action == 'downgrade':
-            tx_id = action_item.get('id')
-            if tx_id is None or tx_id in deleted_ids:
-                continue
-            tx = tx_by_id.get(tx_id)
-            if not tx:
-                logger.warning(f'[Verification] Transaction {tx_id} not found for downgrade')
-                continue
-            logger.info(
-                f'[Verification] Downgrading transaction {tx_id} ({tx.vendor_name}) '
-                f'from {tx.status} to partial: {reason}'
-            )
-            tx.status = 'partial'
+        if changed:
             tx.save()
-            total_downgraded += 1
+            updated += 1
 
-        elif action == 'merge':
-            keep_id = action_item.get('keep_id')
-            delete_id = action_item.get('delete_id')
-            if delete_id is None or delete_id in deleted_ids:
-                continue
-            keep_tx = tx_by_id.get(keep_id)
-            delete_tx = tx_by_id.get(delete_id)
-            if not keep_tx:
-                logger.warning(f'[Verification] Keep transaction {keep_id} not found for merge')
-                continue
-            if not delete_tx:
-                logger.warning(f'[Verification] Delete transaction {delete_id} not found for merge')
-                continue
-            if keep_id in deleted_ids:
-                logger.warning(f'[Verification] Cannot keep transaction {keep_id} — already deleted')
-                continue
+    logger.info(f'[Computation] === PASS 4 DONE === {updated} transactions updated')
 
-            logger.info(
-                f'[Verification] Merging transaction {delete_id} into {keep_id} '
-                f'({keep_tx.vendor_name}): {reason}'
-            )
-
-            # Absorb fields from delete_tx into keep_tx
-            if keep_tx.amount is None and delete_tx.amount is not None:
-                keep_tx.amount = delete_tx.amount
-            if not keep_tx.transaction_date and delete_tx.transaction_date:
-                keep_tx.transaction_date = delete_tx.transaction_date
-            if not keep_tx.order_number and delete_tx.order_number:
-                keep_tx.order_number = delete_tx.order_number
-            if not keep_tx.invoice_number and delete_tx.invoice_number:
-                keep_tx.invoice_number = delete_tx.invoice_number
-            if not keep_tx.description and delete_tx.description:
-                keep_tx.description = delete_tx.description
-            keep_tx.confidence = max(keep_tx.confidence, delete_tx.confidence)
-
-            # Upgrade status if now complete
-            if keep_tx.vendor_name and keep_tx.amount is not None and keep_tx.transaction_date:
-                keep_tx.status = 'complete'
-
-            keep_tx.save()
-            delete_tx.delete()
-            deleted_ids.add(delete_id)
-            total_merged += 1
-
-        else:
-            logger.warning(f'[Verification] Unknown action "{action}": {action_item}')
-
-    logger.info(
-        f'[Verification] === PASS 4 DONE === '
-        f'deleted={total_deleted}, downgraded={total_downgraded}, merged={total_merged}'
-    )
-
-    return {
-        'verification_deleted': total_deleted,
-        'verification_downgraded': total_downgraded,
-        'verification_merged': total_merged,
-    }
+    return {"computation_updated": updated}
 
 
 # ============================================================
@@ -1192,13 +1320,12 @@ def _run_verification_pass(user, api_key):
 
 def run_pipeline(user):
     """
-    Run the full multi-pass email classification pipeline.
+    Run the full multi-pass email processing pipeline.
 
-    1. Prefilter (rule-based)
-    2. Triage (fast LLM pass — transactional yes/no)
-    3. Extraction (detailed LLM pass — extract transaction data with tool_use)
-    4. Correlation (LLM pass — merge related transactions per vendor)
-    5. Verification (LLM pass — review all transactions for quality issues)
+    Pass 1: Triage (Worker + Verifier) -- classify emails as transactional or not
+    Pass 2: Extraction (Worker + Verifier) -- extract structured data with tool_use
+    Pass 3: Correlation (Worker + Verifier) -- merge related transactions per vendor
+    Pass 4: Computation (pure Python) -- compute derivable tax fields
 
     Returns a combined stats dict.
     """
@@ -1208,24 +1335,27 @@ def run_pipeline(user):
 
     logger.info('====== PIPELINE START ======')
 
-    # Step 1: Triage — IA decides what's transactional
-    triage_stats = _run_triage_pass(user, api_key)
+    # Shared rate limiter across all passes
+    rate_limiter = RateLimiter()
 
-    # Step 2: Extraction — IA extracts structured data
-    extraction_stats = _run_extraction_pass(user, api_key)
+    # Pass 1: Triage
+    triage_stats = _run_triage_pass(user, api_key, rate_limiter)
 
-    # Step 3: Correlation — IA merges related transactions
-    correlation_stats = _run_correlation_pass(user, api_key)
+    # Pass 2: Extraction
+    extraction_stats = _run_extraction_pass(user, api_key, rate_limiter)
 
-    # Step 4: Verification — IA reviews final quality
-    verification_stats = _run_verification_pass(user, api_key)
+    # Pass 3: Correlation
+    correlation_stats = _run_correlation_pass(user, api_key, rate_limiter)
+
+    # Pass 4: Computation (pure Python, no LLM)
+    computation_stats = _run_computation_pass(user)
 
     # Combine all stats
     stats = {
         **triage_stats,
         **extraction_stats,
         **correlation_stats,
-        **verification_stats,
+        **computation_stats,
     }
 
     logger.info(f'====== PIPELINE DONE ====== Stats: {json.dumps(stats)}')
