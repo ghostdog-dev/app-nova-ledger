@@ -385,14 +385,14 @@ def _find_existing_transaction(user, email_obj, tx_data, amount, tx_date):
             return match
 
     # 2. Same order_number
-    order_number = tx_data.get('order_number', '').strip()
+    order_number = (tx_data.get('order_number') or '').strip()
     if order_number:
         match = Transaction.objects.filter(user=user, order_number=order_number).first()
         if match:
             return match
 
     # 3. Same invoice_number
-    invoice_number = tx_data.get('invoice_number', '').strip()
+    invoice_number = (tx_data.get('invoice_number') or '').strip()
     if invoice_number:
         match = Transaction.objects.filter(user=user, invoice_number=invoice_number).first()
         if match:

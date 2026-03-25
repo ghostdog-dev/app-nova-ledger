@@ -290,15 +290,28 @@ def _call_api_with_retry(client, **kwargs):
 # ============================================================
 
 TRIAGE_PROMPT = (
-    "For each email below, determine if it is transactional or not.\n\n"
-    "TRANSACTIONAL = invoice, receipt, order confirmation, payment confirmation, "
-    "shipping notification, refund, cancellation, subscription charge/renewal.\n\n"
-    "NOT TRANSACTIONAL = newsletter, notification, conversation, security alert, "
-    "marketing, verification code, welcome email with no charge, account update, "
-    "social media notification, promotional offer.\n\n"
-    "Respond with ONLY a JSON array of objects, one per email:\n"
-    '[{"id": <email_id>, "transactional": true/false}]\n\n'
-    "No other text. Just the JSON array."
+    "For each email, answer: does this email confirm a REAL financial event (money was charged, "
+    "an order was placed, goods were shipped, a refund was issued)?\n\n"
+    "TRANSACTIONAL (true) — money moved or goods moved:\n"
+    "- Invoice/receipt with an amount charged\n"
+    "- Order confirmation (placed and will be charged)\n"
+    "- Payment succeeded or failed (an actual charge attempt)\n"
+    "- Shipping/delivery of a purchased item\n"
+    "- Refund or cancellation of an order that had an amount\n"
+    "- Subscription renewal/charge with an amount\n\n"
+    "NOT TRANSACTIONAL (false) — no money moved:\n"
+    "- Welcome to a service / account created (no charge mentioned)\n"
+    "- Free trial started or ended\n"
+    "- Password reset, verification code, security alert\n"
+    "- Newsletter, marketing, promotional offer\n"
+    "- Service notification (workspace update, feature announcement, usage report)\n"
+    "- Conversation, support ticket, personal email\n"
+    "- Subscription cancelled WITHOUT mentioning a refund amount\n"
+    "- App permission requests, account migration notices\n\n"
+    "When in doubt, mark as false. We prefer missing a transaction over creating false positives.\n\n"
+    "Respond with ONLY a JSON array:\n"
+    '[{"id": <email_id>, "transactional": true/false}]\n'
+    "No other text."
 )
 
 
@@ -744,14 +757,23 @@ def _run_extraction_pass(user, api_key):
 # ============================================================
 
 CORRELATION_PROMPT_TEMPLATE = (
-    "Here are {count} transactions from vendor \"{vendor}\".\n"
-    "Some may be duplicates or related (e.g., order + shipping + delivery = same purchase, "
-    "or a receipt and payment confirmation for the same charge).\n\n"
-    "Return a JSON array of merge instructions:\n"
-    '[{{"keep_id": <id_to_keep>, "delete_id": <id_to_remove>, "reason": "explanation"}}]\n\n'
-    "If all transactions are distinct and should NOT be merged, return an empty array: []\n\n"
-    "Only merge when you are confident they represent the same underlying purchase/charge. "
-    "Different amounts on different dates = distinct transactions, do NOT merge.\n\n"
+    "Here are {count} transactions from vendor \"{vendor}\". Your job: identify which ones "
+    "represent the SAME purchase and should be merged into one.\n\n"
+    "MERGE RULES:\n"
+    "- Same order number → MERGE (order + shipping + delivery = one purchase)\n"
+    "- Same amount + same date + same vendor → MERGE (receipt and payment notification = same charge)\n"
+    "- Shipping email (no amount) + order email (has amount) from same vendor within 3 days → MERGE\n"
+    "- A 'subscription' with no amount on the same date as a 'payment' with an amount → MERGE\n"
+    "- A 'cancellation' with no amount is NOT a transaction — mark for deletion (delete_id, keep_id=null)\n\n"
+    "DO NOT MERGE:\n"
+    "- Different order numbers = different purchases\n"
+    "- Different amounts on different dates = different charges\n"
+    "- A payment of 108€ and a payment of 216€ = distinct, even from the same vendor\n\n"
+    "Return a JSON array:\n"
+    '[{{"keep_id": <id_to_keep>, "delete_id": <id_to_remove>, "reason": "explanation"}}]\n'
+    "To delete a non-transaction (e.g. cancellation notification with no amount):\n"
+    '[{{"keep_id": null, "delete_id": <id_to_delete>, "reason": "not a real transaction"}}]\n'
+    "If all are distinct real transactions, return: []\n\n"
     "Transactions:\n{transactions_json}"
 )
 
@@ -862,21 +884,33 @@ def _run_correlation_pass(user, api_key):
             delete_id = instruction.get('delete_id')
             reason = instruction.get('reason', 'LLM correlation')
 
-            if keep_id is None or delete_id is None:
-                logger.warning(f'[Correlation] Invalid merge instruction: {instruction}')
+            if delete_id is None:
+                logger.warning(f'[Correlation] Invalid merge instruction (no delete_id): {instruction}')
                 continue
 
             if delete_id in deleted_ids:
                 logger.info(f'[Correlation] Transaction {delete_id} already deleted, skipping')
                 continue
 
-            keep_tx = tx_by_id.get(keep_id)
             delete_tx = tx_by_id.get(delete_id)
+            if not delete_tx:
+                logger.warning(f'[Correlation] Transaction {delete_id} not found')
+                continue
 
-            if not keep_tx or not delete_tx:
-                logger.warning(
-                    f'[Correlation] Transaction not found: keep={keep_id}, delete={delete_id}'
+            # keep_id=null means "just delete, not a real transaction"
+            if keep_id is None:
+                logger.info(
+                    f'[Correlation] Deleting non-transaction {delete_id} '
+                    f'for vendor "{vendor_name}": {reason}'
                 )
+                delete_tx.delete()
+                deleted_ids.add(delete_id)
+                total_merges += 1
+                continue
+
+            keep_tx = tx_by_id.get(keep_id)
+            if not keep_tx:
+                logger.warning(f'[Correlation] Keep transaction {keep_id} not found')
                 continue
 
             if keep_id in deleted_ids:
