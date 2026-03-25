@@ -6,7 +6,8 @@ Architecture:
   2. Pass 1 -- TRIAGE: "Is this email transactional? yes/no" (fast, big batches of 40)
   3. Pass 2 -- EXTRACTION: "Extract structured data from this transactional email" (smaller batches of 15, may fetch body)
   4. Pass 3 -- CORRELATION: "These transactions from the same vendor -- should they be merged?" (per-vendor groups)
-  5. Return final stats
+  5. Pass 4 -- VERIFICATION: "Review all transactions for duplicates, false positives, missing data" (single call)
+  6. Return final stats
 """
 
 import json
@@ -297,7 +298,8 @@ TRIAGE_PROMPT = (
     "- Order confirmation (placed and will be charged)\n"
     "- Payment succeeded or failed (an actual charge attempt)\n"
     "- Shipping/delivery of a purchased item\n"
-    "- Refund or cancellation of an order that had an amount\n"
+    "- Refund or cancellation of an order (even without amount — the order itself had value)\n"
+    "- Order cancellation or article cancellation from a store (e.g. 'annulation de commande')\n"
     "- Subscription renewal/charge with an amount\n\n"
     "NOT TRANSACTIONAL (false) — no money moved:\n"
     "- Welcome to a service / account created (no charge mentioned)\n"
@@ -306,9 +308,9 @@ TRIAGE_PROMPT = (
     "- Newsletter, marketing, promotional offer\n"
     "- Service notification (workspace update, feature announcement, usage report)\n"
     "- Conversation, support ticket, personal email\n"
-    "- Subscription cancelled WITHOUT mentioning a refund amount\n"
+    "- Subscription cancelled for a FREE service (no payment was ever made)\n"
     "- App permission requests, account migration notices\n\n"
-    "When in doubt, mark as false. We prefer missing a transaction over creating false positives.\n\n"
+    "When in doubt, mark as false. EXCEPT for order cancellations — always mark those as true.\n\n"
     "Respond with ONLY a JSON array:\n"
     '[{"id": <email_id>, "transactional": true/false}]\n'
     "No other text."
@@ -964,6 +966,216 @@ def _run_correlation_pass(user, api_key):
 
 
 # ============================================================
+# PASS 4 — VERIFICATION
+# ============================================================
+
+VERIFICATION_PROMPT = (
+    "Here is the final list of extracted transactions. Review for quality issues:\n"
+    "1. DUPLICATES: Same purchase appearing twice (same vendor + same amount + dates within 3 days). "
+    "If found, return delete instructions.\n"
+    "2. FALSE POSITIVES: Entries that are NOT real financial transactions "
+    "(service notifications, account updates with no money involved, confidence below 60%). "
+    "If found, return delete instructions.\n"
+    "3. MISSING DATA: Transactions marked 'complete' but missing critical fields. "
+    "If found, return downgrade instructions.\n\n"
+    "Return a JSON array of actions:\n"
+    '[{"action": "delete", "id": <transaction_id>, "reason": "..."},\n'
+    ' {"action": "downgrade", "id": <transaction_id>, "reason": "..."},\n'
+    ' {"action": "merge", "keep_id": <id>, "delete_id": <id>, "reason": "..."}]\n\n'
+    "If everything looks good, return: []"
+)
+
+
+def _run_verification_pass(user, api_key):
+    """
+    Pass 4: Verification — review all transactions for duplicates, false positives,
+    and missing data. Executes delete/downgrade/merge actions.
+    Returns stats dict.
+    """
+    logger.info('[Verification] === PASS 4 START ===')
+
+    all_transactions = list(Transaction.objects.filter(user=user).order_by('id'))
+
+    if not all_transactions:
+        logger.info('[Verification] No transactions to verify')
+        return {
+            'verification_deleted': 0,
+            'verification_downgraded': 0,
+            'verification_merged': 0,
+        }
+
+    # Build transaction data for the LLM
+    tx_data = []
+    for tx in all_transactions:
+        tx_data.append({
+            'id': tx.id,
+            'type': tx.type,
+            'status': tx.status,
+            'vendor_name': tx.vendor_name,
+            'amount': str(tx.amount) if tx.amount else None,
+            'currency': tx.currency,
+            'transaction_date': tx.transaction_date.isoformat() if tx.transaction_date else None,
+            'invoice_number': tx.invoice_number,
+            'order_number': tx.order_number,
+            'description': tx.description,
+            'confidence': tx.confidence,
+        })
+
+    prompt = (
+        f"{VERIFICATION_PROMPT}\n\n"
+        f"Transactions ({len(tx_data)}):\n"
+        f"{json.dumps(tx_data, ensure_ascii=False, indent=2)}"
+    )
+
+    client = anthropic.Anthropic(api_key=api_key)
+    rate_limiter = RateLimiter()
+
+    if rate_limiter:
+        rate_limiter.wait_if_needed()
+
+    try:
+        response = _call_api_with_retry(
+            client,
+            model=MODEL,
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        if rate_limiter and hasattr(response, 'usage') and response.usage:
+            rate_limiter.record_usage(response.usage.input_tokens)
+
+    except Exception as e:
+        logger.error(f'[Verification] API error: {e}')
+        return {
+            'verification_deleted': 0,
+            'verification_downgraded': 0,
+            'verification_merged': 0,
+        }
+
+    # Extract response text
+    response_text = ""
+    for block in response.content:
+        if hasattr(block, 'text') and block.text:
+            response_text += block.text
+
+    actions = _extract_json(response_text)
+    if actions is None:
+        logger.warning(f'[Verification] Could not parse JSON response: {response_text[:500]}')
+        return {
+            'verification_deleted': 0,
+            'verification_downgraded': 0,
+            'verification_merged': 0,
+        }
+
+    if not actions:
+        logger.info('[Verification] All transactions look good, no actions needed')
+        return {
+            'verification_deleted': 0,
+            'verification_downgraded': 0,
+            'verification_merged': 0,
+        }
+
+    # Build lookup of transaction objects by ID
+    tx_by_id = {tx.id: tx for tx in all_transactions}
+
+    total_deleted = 0
+    total_downgraded = 0
+    total_merged = 0
+    deleted_ids = set()
+
+    for action_item in actions:
+        action = action_item.get('action')
+        reason = action_item.get('reason', 'verification')
+
+        if action == 'delete':
+            tx_id = action_item.get('id')
+            if tx_id is None or tx_id in deleted_ids:
+                continue
+            tx = tx_by_id.get(tx_id)
+            if not tx:
+                logger.warning(f'[Verification] Transaction {tx_id} not found for delete')
+                continue
+            logger.info(f'[Verification] Deleting transaction {tx_id} ({tx.vendor_name}): {reason}')
+            tx.delete()
+            deleted_ids.add(tx_id)
+            total_deleted += 1
+
+        elif action == 'downgrade':
+            tx_id = action_item.get('id')
+            if tx_id is None or tx_id in deleted_ids:
+                continue
+            tx = tx_by_id.get(tx_id)
+            if not tx:
+                logger.warning(f'[Verification] Transaction {tx_id} not found for downgrade')
+                continue
+            logger.info(
+                f'[Verification] Downgrading transaction {tx_id} ({tx.vendor_name}) '
+                f'from {tx.status} to partial: {reason}'
+            )
+            tx.status = 'partial'
+            tx.save()
+            total_downgraded += 1
+
+        elif action == 'merge':
+            keep_id = action_item.get('keep_id')
+            delete_id = action_item.get('delete_id')
+            if delete_id is None or delete_id in deleted_ids:
+                continue
+            keep_tx = tx_by_id.get(keep_id)
+            delete_tx = tx_by_id.get(delete_id)
+            if not keep_tx:
+                logger.warning(f'[Verification] Keep transaction {keep_id} not found for merge')
+                continue
+            if not delete_tx:
+                logger.warning(f'[Verification] Delete transaction {delete_id} not found for merge')
+                continue
+            if keep_id in deleted_ids:
+                logger.warning(f'[Verification] Cannot keep transaction {keep_id} — already deleted')
+                continue
+
+            logger.info(
+                f'[Verification] Merging transaction {delete_id} into {keep_id} '
+                f'({keep_tx.vendor_name}): {reason}'
+            )
+
+            # Absorb fields from delete_tx into keep_tx
+            if keep_tx.amount is None and delete_tx.amount is not None:
+                keep_tx.amount = delete_tx.amount
+            if not keep_tx.transaction_date and delete_tx.transaction_date:
+                keep_tx.transaction_date = delete_tx.transaction_date
+            if not keep_tx.order_number and delete_tx.order_number:
+                keep_tx.order_number = delete_tx.order_number
+            if not keep_tx.invoice_number and delete_tx.invoice_number:
+                keep_tx.invoice_number = delete_tx.invoice_number
+            if not keep_tx.description and delete_tx.description:
+                keep_tx.description = delete_tx.description
+            keep_tx.confidence = max(keep_tx.confidence, delete_tx.confidence)
+
+            # Upgrade status if now complete
+            if keep_tx.vendor_name and keep_tx.amount is not None and keep_tx.transaction_date:
+                keep_tx.status = 'complete'
+
+            keep_tx.save()
+            delete_tx.delete()
+            deleted_ids.add(delete_id)
+            total_merged += 1
+
+        else:
+            logger.warning(f'[Verification] Unknown action "{action}": {action_item}')
+
+    logger.info(
+        f'[Verification] === PASS 4 DONE === '
+        f'deleted={total_deleted}, downgraded={total_downgraded}, merged={total_merged}'
+    )
+
+    return {
+        'verification_deleted': total_deleted,
+        'verification_downgraded': total_downgraded,
+        'verification_merged': total_merged,
+    }
+
+
+# ============================================================
 # MAIN PIPELINE
 # ============================================================
 
@@ -975,6 +1187,7 @@ def run_pipeline(user):
     2. Triage (fast LLM pass — transactional yes/no)
     3. Extraction (detailed LLM pass — extract transaction data with tool_use)
     4. Correlation (LLM pass — merge related transactions per vendor)
+    5. Verification (LLM pass — review all transactions for quality issues)
 
     Returns a combined stats dict.
     """
@@ -1000,6 +1213,9 @@ def run_pipeline(user):
     # Step 4: Correlation
     correlation_stats = _run_correlation_pass(user, api_key)
 
+    # Step 5: Verification
+    verification_stats = _run_verification_pass(user, api_key)
+
     # Combine all stats
     stats = {
         'prefilter_auto_ignored': prefilter_stats['auto_ignored'],
@@ -1007,6 +1223,7 @@ def run_pipeline(user):
         **triage_stats,
         **extraction_stats,
         **correlation_stats,
+        **verification_stats,
     }
 
     logger.info(f'====== PIPELINE DONE ====== Stats: {json.dumps(stats)}')

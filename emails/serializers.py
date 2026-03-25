@@ -17,6 +17,7 @@ class EmailSerializer(serializers.ModelSerializer):
 class TransactionSerializer(serializers.ModelSerializer):
     email_subject = serializers.CharField(source='email.subject', read_only=True, default='')
     email_from = serializers.CharField(source='email.from_address', read_only=True, default='')
+    email_has_attachments = serializers.BooleanField(source='email.has_attachments', read_only=True, default=False)
 
     class Meta:
         model = Transaction
@@ -26,6 +27,6 @@ class TransactionSerializer(serializers.ModelSerializer):
             'payment_method', 'payment_reference', 'items',
             'transaction_date', 'invoice_number', 'order_number',
             'description', 'raw_data', 'confidence', 'processed_at',
-            'email_subject', 'email_from',
+            'email_subject', 'email_from', 'email_has_attachments',
         ]
         read_only_fields = fields

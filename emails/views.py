@@ -582,7 +582,17 @@ def test_page(request):
                 details.appendChild(srcDiv);
             }
 
-            /* Row 7: Raw data */
+            /* Row 7: Attachments */
+            var attachDiv = el('div', 'source-email');
+            attachDiv.appendChild(el('label', null, 'Attachments'));
+            if (t.email_has_attachments) {
+                attachDiv.appendChild(el('span', null, String.fromCodePoint(0x1F4CE) + ' PDF available'));
+            } else {
+                attachDiv.appendChild(el('span', null, 'No attachments'));
+            }
+            details.appendChild(attachDiv);
+
+            /* Row 8: Raw data */
             if (t.raw_data && Object.keys(t.raw_data).length > 0) {
                 var rawBtn = el('button', 'raw-toggle', 'Show raw data');
                 var rawWrap = el('div', 'raw-content');
