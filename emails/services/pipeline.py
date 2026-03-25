@@ -119,15 +119,15 @@ EXTRACTION_TOOLS = [
                             },
                             "tax_rate": {
                                 "type": "number",
-                                "description": "Tax rate as percentage (e.g. 20.00 for 20%). Null if unknown.",
+                                "description": "Tax rate as percentage, e.g. 20.0 for 20%. Null if unknown.",
                             },
                             "payment_method": {
                                 "type": "string",
-                                "description": "Payment method: CB, credit card, PayPal, bank transfer, etc.",
+                                "description": "Payment method: CB, Mastercard, Visa, PayPal, virement, Link, Apple Pay, etc.",
                             },
                             "payment_reference": {
                                 "type": "string",
-                                "description": "Payment reference or transaction ID from the payment processor.",
+                                "description": "Payment/transaction reference ID from the payment processor.",
                             },
                             "items": {
                                 "type": "array",
@@ -136,7 +136,7 @@ EXTRACTION_TOOLS = [
                                     "type": "object",
                                     "properties": {
                                         "name": {"type": "string"},
-                                        "quantity": {"type": "number"},
+                                        "quantity": {"type": "integer"},
                                         "unit_price": {"type": "number"},
                                     },
                                     "required": ["name"],
@@ -195,9 +195,9 @@ EXTRACTION_SYSTEM_PROMPT = (
     "type (invoice/receipt/order/payment/shipping/refund/cancellation/subscription/other), "
     "invoice_number, order_number, description.\n\n"
     "Also extract if available (OPTIONAL — only extract what's actually in the email): "
-    "amount excluding tax (amount_tax_excl), tax amount (tax_amount), tax rate percentage (tax_rate, e.g. 20.00 for 20%), "
-    "payment method (payment_method: CB, credit card, PayPal, bank transfer, etc.), "
-    "payment reference/transaction ID (payment_reference), "
+    "amount excluding tax (amount_tax_excl), tax amount (tax_amount), tax rate percentage (tax_rate, e.g. 20.0 for 20%), "
+    "payment method (payment_method: CB, Mastercard, Visa, PayPal, virement, Link, Apple Pay, etc.), "
+    "payment/transaction reference ID (payment_reference), "
     "and line items (items: list of {name, quantity, unit_price}).\n\n"
     "RULES:\n"
     "- If the snippet is empty or missing amounts/key details, use get_email_body to fetch the full content.\n"
@@ -982,6 +982,11 @@ VERIFICATION_PROMPT = (
     '[{"action": "delete", "id": <transaction_id>, "reason": "..."},\n'
     ' {"action": "downgrade", "id": <transaction_id>, "reason": "..."},\n'
     ' {"action": "merge", "keep_id": <id>, "delete_id": <id>, "reason": "..."}]\n\n'
+    "CRITICAL RULES:\n"
+    "- NEVER merge transactions that have DIFFERENT order_numbers — even if they have the same amount and vendor. "
+    "Different order numbers = different purchases, period.\n"
+    "- The correlation pass (Pass 3) already reviewed these transactions. Only override its decisions if you find "
+    "a clear error. If Pass 3 said transactions are distinct, trust that unless you have strong evidence otherwise.\n\n"
     "If everything looks good, return: []"
 )
 

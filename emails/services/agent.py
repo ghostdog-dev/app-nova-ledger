@@ -364,6 +364,8 @@ def _normalize_vendor_name(name):
         r'\b(inc\.?|ltd\.?|llc\.?|pbc\.?|sas\.?|sa\.?|gmbh\.?|co\.?|corp\.?|limited|pty\.?)\s*$',
         '', name, flags=re.IGNORECASE,
     )
+    # Strip trailing commas and whitespace left after suffix removal
+    name = name.strip(' ,')
     # Collapse whitespace
     name = re.sub(r'\s+', ' ', name).strip()
     return name
