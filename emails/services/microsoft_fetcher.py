@@ -1,0 +1,122 @@
+import logging
+from datetime import datetime, timezone
+
+import requests
+from allauth.socialaccount.models import SocialAccount, SocialToken
+from django.utils import timezone as dj_timezone
+
+from emails.models import Email
+
+logger = logging.getLogger(__name__)
+
+GRAPH_API = 'https://graph.microsoft.com/v1.0/me'
+PAGE_SIZE = 100
+
+
+def _get_microsoft_token(user):
+    try:
+        account = SocialAccount.objects.get(user=user, provider='microsoft')
+        return SocialToken.objects.get(account=account)
+    except (SocialAccount.DoesNotExist, SocialToken.DoesNotExist):
+        return None
+
+
+def _parse_ms_datetime(dt_str):
+    """Parse Microsoft Graph datetime string to datetime."""
+    if not dt_str:
+        return dj_timezone.now()
+    # Microsoft returns ISO 8601, sometimes with Z, sometimes without
+    dt_str = dt_str.replace('Z', '+00:00')
+    try:
+        return datetime.fromisoformat(dt_str)
+    except ValueError:
+        return dj_timezone.now()
+
+
+def _fetch_folder(user, token, folder, existing_ids, max_pages=None):
+    """Fetch emails from a specific Microsoft mail folder."""
+    headers = {'Authorization': f'Bearer {token.token}'}
+    new_emails = []
+
+    url = (
+        f'{GRAPH_API}/mailFolders/{folder}/messages'
+        f'?$top={PAGE_SIZE}'
+        f'&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments,categories,inferenceClassification'
+        f'&$orderby=receivedDateTime desc'
+    )
+
+    pages_fetched = 0
+
+    while url:
+        resp = requests.get(url, headers=headers)
+        if resp.status_code != 200:
+            logger.error(f'Microsoft {folder} fetch failed: {resp.status_code} {resp.text[:200]}')
+            break
+
+        data = resp.json()
+        messages = data.get('value', [])
+
+        if not messages:
+            break
+
+        for msg in messages:
+            msg_id = msg.get('id', '')
+            if msg_id in existing_ids:
+                continue
+
+            from_data = msg.get('from', {}).get('emailAddress', {})
+
+            new_emails.append(Email(
+                user=user,
+                provider=Email.Provider.MICROSOFT,
+                message_id=msg_id,
+                from_address=from_data.get('address', ''),
+                from_name=from_data.get('name', ''),
+                subject=msg.get('subject', ''),
+                snippet=msg.get('bodyPreview', ''),
+                date=_parse_ms_datetime(msg.get('receivedDateTime')),
+                labels=msg.get('categories', []),
+                has_attachments=msg.get('hasAttachments', False),
+                status=Email.Status.NEW,
+            ))
+
+        pages_fetched += 1
+        url = data.get('@odata.nextLink')
+
+        if max_pages and pages_fetched >= max_pages:
+            break
+
+    return new_emails
+
+
+def fetch_emails(user, max_pages=None):
+    """
+    Fetch emails from Microsoft Graph API.
+    Fetches from Inbox and SentItems, excludes JunkEmail by targeting specific folders.
+    Returns count of new emails saved.
+    """
+    token = _get_microsoft_token(user)
+    if not token:
+        logger.info(f'No Microsoft token for user {user.pk}')
+        return 0
+
+    # Get existing message IDs for dedup
+    existing_ids = set(
+        Email.objects.filter(user=user, provider='microsoft')
+        .values_list('message_id', flat=True)
+    )
+
+    all_new_emails = []
+
+    # Fetch from Inbox (excludes JunkEmail, Deleted Items, etc.)
+    all_new_emails.extend(_fetch_folder(user, token, 'inbox', existing_ids, max_pages))
+
+    # Also fetch SentItems (useful for sent invoices)
+    all_new_emails.extend(_fetch_folder(user, token, 'sentitems', existing_ids, max_pages))
+
+    # Bulk create, skip duplicates
+    if all_new_emails:
+        Email.objects.bulk_create(all_new_emails, ignore_conflicts=True)
+
+    logger.info(f'Microsoft: fetched {len(all_new_emails)} new emails for user {user.pk}')
+    return len(all_new_emails)
