@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'dj_rest_auth',
     'dj_rest_auth.registration',
     'accounts',
+    'emails',
 ]
 
 SITE_ID = 1
