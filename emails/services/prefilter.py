@@ -7,18 +7,45 @@ logger = logging.getLogger(__name__)
 # Domains that NEVER send transactional emails (invoices, receipts, orders).
 # Be conservative: if a domain might ever send a receipt or payment confirmation, do NOT add it here.
 NON_TRANSACTIONAL_DOMAINS = {
+    # Social / professional
     'linkedin.com',
     'github.com',
+    # Education / courses
     'codecademy.com',
     'openclassrooms.com',
     'magicschool.ai',
+    'codingame.com',
+    # Job boards
+    'hellowork.com',
+    'free-work.com',
+    'externatic.fr',
+    # Dev tools newsletters (never send invoices)
     'whimsical.com',
     'codepen.io',
+    'cursor.com',
+    'claude.com',
+    'bubble.io',
+    'render.com',
+    'lovable.dev',
+    'uxpilot.ai',
+    'figma.com',
+    # Creative / media
+    'artlist.io',
+    'dribbble.com',
+    'pixlr.com',
+    # Entertainment / streaming
+    'crunchyroll.com',
+    'tf1.fr',
+    'primevideo.com',
+    # Gaming promos (not transactions)
+    'instant-gaming.com',
+    '1kamas.com',
+    # Security / misc
     'malwarebytes.com',
-    'free-work.com',
     'wetransfer.com',
     'trustpilotmail.com',
     'staycation.co',
+    'nordpass.com',
 }
 
 # Gmail labels that indicate non-transactional categories
