@@ -73,11 +73,20 @@ TRIAGE_WORKER_PROMPT = (
 )
 
 TRIAGE_VERIFIER_PROMPT = (
-    "Review these triage decisions. Flag any obvious errors.\n"
-    "- Emails about order cancellation/annulation SHOULD be transactional.\n"
-    "- Failed payment notifications SHOULD be transactional.\n"
-    "- Newsletters/marketing SHOULD NOT be transactional even if they contain "
-    "words like 'order' or 'payment'.\n\n"
+    "Review these triage decisions. ONLY correct CLEAR errors.\n\n"
+    "SHOULD be transactional (true):\n"
+    "- Order cancellation/annulation from a store (money was involved)\n"
+    "- Failed payment notifications (a real charge was attempted)\n"
+    "- Receipts, invoices, shipping confirmations\n\n"
+    "SHOULD NOT be transactional (false) — DO NOT flip these to true:\n"
+    "- Security alerts, new sign-in notifications, verification codes\n"
+    "- Welcome emails, account creation, email verification\n"
+    "- Marketplace messages (leboncoin, etc.) that are just conversations\n"
+    "- Azure/AWS/cloud account setup notifications\n"
+    "- SSH key, password reset, 2FA notifications\n"
+    "- Any email where NO money was charged or goods shipped\n\n"
+    "Be CONSERVATIVE. Only correct if you are 100% certain the worker was wrong. "
+    "When in doubt, do NOT correct.\n\n"
     "Decisions: {decisions}\n\n"
     "Return corrections: "
     "[{{\"id\": <email_id>, \"should_be\": true/false, \"reason\": \"...\"}}] "
@@ -110,12 +119,18 @@ EXTRACTION_SYSTEM_PROMPT = (
 )
 
 EXTRACTION_VERIFIER_PROMPT = (
-    "Review these extracted transactions. Flag issues:\n"
-    "- Amount seems wrong (e.g. negative, unreasonably large)?\n"
-    "- Items don't add up to the total amount?\n"
-    "- Date is in the future or very old?\n"
-    "- Type doesn't match description (e.g. type='order' but description says 'cancellation')?\n"
-    "- Missing amount but it should be extractable from description?\n\n"
+    "Today's date: {today}. Review these extracted transactions. Flag ONLY real issues:\n\n"
+    "CHECK:\n"
+    "- Amount negative or unreasonably large (>100,000)? → correct to null\n"
+    "- Items unit_prices don't add up to total amount? → flag\n"
+    "- Type doesn't match description (e.g. type='order' but description says 'cancellation')? → correct type\n"
+    "- Missing amount but description contains a clear amount? → extract it\n\n"
+    "DO NOT TOUCH:\n"
+    "- Dates: NEVER remove or change a date. The worker extracted it from the email.\n"
+    "- Payment methods: NEVER remove these.\n"
+    "- Items: NEVER remove items the worker extracted.\n\n"
+    "Be CONSERVATIVE. Only correct if you are 100% certain there is an error. "
+    "Do NOT remove data that looks correct.\n\n"
     "Transactions: {transactions}\n\n"
     "Return corrections: "
     "[{{\"id\": <transaction_id>, \"field\": \"<field_name>\", \"correct_value\": <value>, \"reason\": \"...\"}}] "
@@ -134,8 +149,11 @@ CORRELATION_PROMPT_TEMPLATE = (
     "- Shipping email (no amount) + order email (has amount) from same vendor within 3 days -> MERGE\n"
     "- A 'subscription' with no amount on the same date as a 'payment' with an amount -> MERGE\n"
     "- A 'cancellation' with no amount is NOT a transaction -- mark for deletion (delete_id, keep_id=null)\n\n"
+    "CARRIER EMAILS (DHL, FedEx, UPS, Colissimo, La Poste):\n"
+    "- Shipping carriers are NOT the vendor. The real vendor is whoever sold the item.\n"
+    "- If a carrier shipping email has the same order/tracking number as another vendor's order → MERGE into the vendor's transaction\n\n"
     "DO NOT MERGE:\n"
-    "- Different order numbers = different purchases\n"
+    "- Different order numbers = different purchases, PERIOD\n"
     "- Different amounts on different dates = different charges\n"
     "- A payment of 108EUR and a payment of 216EUR = distinct, even from the same vendor\n\n"
     "Return a JSON array:\n"
@@ -180,10 +198,8 @@ EXTRACTION_TOOLS = [
                 },
             },
             "required": ["email_id"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
+                    },
+            },
     {
         "name": "save_transactions",
         "description": (
@@ -270,19 +286,15 @@ EXTRACTION_TOOLS = [
                                         "unit_price": {"type": "number"},
                                     },
                                     "required": ["name"],
-                                    "additionalProperties": False,
-                                },
+                                                                    },
                             },
                         },
                         "required": ["email_id", "type", "vendor_name", "confidence", "status"],
-                        "additionalProperties": False,
-                    },
+                                            },
                 },
             },
             "required": ["transactions"],
-            "additionalProperties": False,
         },
-        "strict": True,
     },
     {
         "name": "mark_emails_processed",
@@ -305,10 +317,8 @@ EXTRACTION_TOOLS = [
                 },
             },
             "required": ["email_ids", "status"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
+                    },
+            },
 ]
 
 EXTRACTION_TOOL_HANDLERS = {
@@ -860,7 +870,9 @@ def _run_extraction_verifier(user, client, rate_limiter):
             'confidence': tx.confidence,
         })
 
+    from django.utils import timezone as dj_tz
     prompt = EXTRACTION_VERIFIER_PROMPT.format(
+        today=dj_tz.now().strftime('%Y-%m-%d'),
         transactions=json.dumps(tx_data, ensure_ascii=False)
     )
 
@@ -1258,6 +1270,27 @@ def _run_correlation_pass(user, api_key, rate_limiter):
             f'[Correlation] Vendor "{vendor_name}": merged {len(deleted_ids)} '
             f'out of {len(txs)} transactions'
         )
+
+    # --- Cross-vendor carrier correlation ---
+    # DHL/FedEx/UPS shipping emails should be merged into the real vendor's order
+    CARRIER_NAMES = {'dhl', 'dhl express', 'fedex', 'ups', 'colissimo', 'la poste', 'chronopost'}
+    remaining_txs = list(Transaction.objects.filter(user=user).order_by('id'))
+    carrier_txs = [t for t in remaining_txs if _normalize_vendor_name(t.vendor_name) in CARRIER_NAMES]
+    non_carrier_txs = [t for t in remaining_txs if _normalize_vendor_name(t.vendor_name) not in CARRIER_NAMES]
+
+    for carrier_tx in carrier_txs:
+        if not carrier_tx.order_number:
+            continue
+        # Find a non-carrier transaction with the same order number
+        for other_tx in non_carrier_txs:
+            if other_tx.order_number and other_tx.order_number == carrier_tx.order_number:
+                logger.info(
+                    f'[Correlation] Merging carrier {carrier_tx.vendor_name} (id={carrier_tx.id}) '
+                    f'into {other_tx.vendor_name} (id={other_tx.id}) — same order #{carrier_tx.order_number}'
+                )
+                carrier_tx.delete()
+                total_merges += 1
+                break
 
     logger.info(
         f'[Correlation] === PASS 3 DONE === '
