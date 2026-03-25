@@ -59,9 +59,11 @@ def _get_header(headers, name):
     return ''
 
 
-def fetch_emails(user, max_pages=None):
+def fetch_emails(user, max_pages=None, since_date=None):
     """
     Fetch emails from Gmail API with pre-filtering.
+    Args:
+        since_date: Optional date string (YYYY-MM-DD). Defaults to 30 days ago.
     Returns count of new emails saved.
     """
     token = _get_google_token(user)
@@ -70,6 +72,14 @@ def fetch_emails(user, max_pages=None):
         return 0
 
     headers = {'Authorization': f'Bearer {token.token}'}
+
+    # Default to 30 days ago
+    if not since_date:
+        from datetime import timedelta
+        since_date = (dj_timezone.now() - timedelta(days=30)).strftime('%Y/%m/%d')
+    else:
+        # Convert YYYY-MM-DD to YYYY/MM/DD for Gmail
+        since_date = since_date.replace('-', '/')
 
     # Get existing message IDs for dedup
     existing_ids = set(
@@ -82,9 +92,9 @@ def fetch_emails(user, max_pages=None):
     pages_fetched = 0
 
     while True:
-        # List messages with pre-filter query
+        # List messages with pre-filter query + date
         params = {
-            'q': GMAIL_EXCLUDE_QUERY,
+            'q': f'{GMAIL_EXCLUDE_QUERY} after:{since_date}',
             'maxResults': BATCH_SIZE,
         }
         if page_token:

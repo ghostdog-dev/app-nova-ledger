@@ -1,6 +1,8 @@
 import logging
 
 from django.http import HttpResponse
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -14,10 +16,10 @@ from .services import gmail_fetcher, microsoft_fetcher
 logger = logging.getLogger(__name__)
 
 
+@ensure_csrf_cookie
 def test_page(request):
     """Simple HTML test page for email sync & classification.
     Note: This is a dev-only test page, not user-facing.
-    Uses innerHTML with data from our own API (same-origin, authenticated).
     """
     html = """<!DOCTYPE html>
 <html>
@@ -238,14 +240,16 @@ def test_page(request):
     return HttpResponse(html)
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class EmailSyncView(APIView):
     """POST /api/emails/sync/ — fetch emails from all linked providers."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = request.user
-        google_count = gmail_fetcher.fetch_emails(user)
-        microsoft_count = microsoft_fetcher.fetch_emails(user)
+        since_date = request.data.get('since_date')  # Optional YYYY-MM-DD, defaults to 30 days
+        google_count = gmail_fetcher.fetch_emails(user, since_date=since_date)
+        microsoft_count = microsoft_fetcher.fetch_emails(user, since_date=since_date)
         return Response({
             'google': google_count,
             'microsoft': microsoft_count,
@@ -253,6 +257,7 @@ class EmailSyncView(APIView):
         })
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class EmailClassifyView(APIView):
     """POST /api/emails/classify/ — run Claude agent on unprocessed emails."""
     permission_classes = [IsAuthenticated]
