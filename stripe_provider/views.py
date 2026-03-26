@@ -10,6 +10,7 @@ from .models import (
     StripeBalanceTransaction,
     StripeCharge,
     StripeConnection,
+    StripeDispute,
     StripeInvoice,
     StripePayout,
     StripeSubscription,
@@ -18,6 +19,7 @@ from .serializers import (
     StripeBalanceTransactionSerializer,
     StripeChargeSerializer,
     StripeConnectionSerializer,
+    StripeDisputeSerializer,
     StripeInvoiceSerializer,
     StripePayoutSerializer,
     StripeSubscriptionSerializer,
@@ -84,7 +86,12 @@ class StripeSyncView(APIView):
 
     def post(self, request):
         try:
-            stats = sync_stripe_data(request.user)
+            days_back = min(int(request.data.get('days_back', 90)), 365)
+        except (ValueError, TypeError):
+            days_back = 90
+
+        try:
+            stats = sync_stripe_data(request.user, days_back=days_back)
             return Response(stats)
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -101,7 +108,7 @@ class StripeBalanceTransactionsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = StripeBalanceTransaction.objects.filter(user=request.user)
+        qs = StripeBalanceTransaction.objects.filter(user=request.user).select_related('connection')
 
         # Filter by type
         txn_type = request.query_params.get('type')
@@ -122,7 +129,7 @@ class StripeChargesView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = StripeCharge.objects.filter(user=request.user)
+        qs = StripeCharge.objects.filter(user=request.user).select_related('connection')
 
         # Filter by status
         charge_status = request.query_params.get('status')
@@ -143,7 +150,7 @@ class StripePayoutsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = StripePayout.objects.filter(user=request.user)
+        qs = StripePayout.objects.filter(user=request.user).select_related('connection')
 
         # Filter by status
         payout_status = request.query_params.get('status')
@@ -159,7 +166,7 @@ class StripeInvoicesView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = StripeInvoice.objects.filter(user=request.user)
+        qs = StripeInvoice.objects.filter(user=request.user).select_related('connection')
 
         # Filter by status
         invoice_status = request.query_params.get('status')
@@ -180,7 +187,7 @@ class StripeSubscriptionsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        qs = StripeSubscription.objects.filter(user=request.user)
+        qs = StripeSubscription.objects.filter(user=request.user).select_related('connection')
 
         # Filter by status
         sub_status = request.query_params.get('status')
@@ -188,4 +195,20 @@ class StripeSubscriptionsView(APIView):
             qs = qs.filter(status=sub_status)
 
         serializer = StripeSubscriptionSerializer(qs[:500], many=True)
+        return Response(serializer.data)
+
+
+class StripeDisputesView(APIView):
+    """List Stripe disputes."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = StripeDispute.objects.filter(user=request.user).select_related('connection')
+
+        # Filter by status
+        dispute_status = request.query_params.get('status')
+        if dispute_status:
+            qs = qs.filter(status=dispute_status)
+
+        serializer = StripeDisputeSerializer(qs[:500], many=True)
         return Response(serializer.data)

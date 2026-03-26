@@ -7,10 +7,11 @@ from rest_framework.views import APIView
 
 import httpx
 
-from .models import PayPalConnection, PayPalInvoice, PayPalTransaction
+from .models import PayPalConnection, PayPalDispute, PayPalInvoice, PayPalTransaction
 from .serializers import (
     PayPalConnectInputSerializer,
     PayPalConnectionSerializer,
+    PayPalDisputeSerializer,
     PayPalInvoiceSerializer,
     PayPalTransactionSerializer,
 )
@@ -89,7 +90,10 @@ class PayPalSyncView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        days_back = int(request.data.get('days_back', 30))
+        try:
+            days_back = min(int(request.data.get('days_back', 30)), 365)
+        except (ValueError, TypeError):
+            days_back = 30
 
         try:
             stats = sync_paypal_data(request.user, days_back=days_back)
@@ -163,4 +167,25 @@ class PayPalInvoicesView(APIView):
             qs = qs.filter(recipient_email__icontains=recipient)
 
         serializer = PayPalInvoiceSerializer(qs[:500], many=True)
+        return Response(serializer.data)
+
+
+class PayPalDisputesView(APIView):
+    """List user's PayPal disputes with optional filtering."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = PayPalDispute.objects.filter(user=request.user).select_related('connection')
+
+        # Filter by status
+        dispute_status = request.query_params.get('status')
+        if dispute_status:
+            qs = qs.filter(status=dispute_status)
+
+        # Filter by reason
+        reason = request.query_params.get('reason')
+        if reason:
+            qs = qs.filter(reason=reason)
+
+        serializer = PayPalDisputeSerializer(qs[:500], many=True)
         return Response(serializer.data)

@@ -7,4 +7,5 @@ urlpatterns = [
     path('sync/', views.PayPalSyncView.as_view(), name='paypal-sync'),
     path('transactions/', views.PayPalTransactionsView.as_view(), name='paypal-transactions'),
     path('invoices/', views.PayPalInvoicesView.as_view(), name='paypal-invoices'),
+    path('disputes/', views.PayPalDisputesView.as_view(), name='paypal-disputes'),
 ]

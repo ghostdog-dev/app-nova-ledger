@@ -5,7 +5,7 @@ from django.db import models
 class StripeConnection(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='stripe_connection')
     stripe_account_id = models.CharField(max_length=255)
-    api_key = models.TextField()  # secret key, TODO: encrypt in production
+    api_key = models.TextField()  # WARNING: Encrypt before production (use django-fernet-fields or similar)
     account_name = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
     last_sync = models.DateTimeField(null=True, blank=True)

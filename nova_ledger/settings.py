@@ -123,6 +123,16 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'paypal_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'mollie_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
 
@@ -193,6 +203,6 @@ AI_RETRY_BASE_DELAY = int(os.getenv('AI_RETRY_BASE_DELAY', '2'))
 AI_EMAIL_BODY_MAX_CHARS = int(os.getenv('AI_EMAIL_BODY_MAX_CHARS', '4000'))
 DEFAULT_EMAIL_LOOKBACK_DAYS = int(os.getenv('DEFAULT_EMAIL_LOOKBACK_DAYS', '30'))
 
-# Stripe
+# Stripe — for webhook verification (future use)
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')

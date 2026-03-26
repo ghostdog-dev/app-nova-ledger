@@ -120,13 +120,32 @@ def sync_mollie_data(user) -> dict:
 
     try:
         # Sync payments
-        stats['payments'] = _sync_payments(client, user, connection)
+        try:
+            stats['payments'] = _sync_payments(client, user, connection)
+        except Exception:
+            logger.exception('Failed to sync Mollie payments for %s', user.email)
+            stats['payments_error'] = 'Failed to sync payments'
+
         # Sync refunds
-        stats['refunds'] = _sync_refunds(client, user, connection)
+        try:
+            stats['refunds'] = _sync_refunds(client, user, connection)
+        except Exception:
+            logger.exception('Failed to sync Mollie refunds for %s', user.email)
+            stats['refunds_error'] = 'Failed to sync refunds'
+
         # Sync settlements
-        stats['settlements'] = _sync_settlements(client, user, connection)
+        try:
+            stats['settlements'] = _sync_settlements(client, user, connection)
+        except Exception:
+            logger.exception('Failed to sync Mollie settlements for %s', user.email)
+            stats['settlements_error'] = 'Failed to sync settlements'
+
         # Sync invoices
-        stats['invoices'] = _sync_invoices(client, user, connection)
+        try:
+            stats['invoices'] = _sync_invoices(client, user, connection)
+        except Exception:
+            logger.exception('Failed to sync Mollie invoices for %s', user.email)
+            stats['invoices_error'] = 'Failed to sync invoices'
 
         # Update last_sync
         connection.last_sync = timezone.now()

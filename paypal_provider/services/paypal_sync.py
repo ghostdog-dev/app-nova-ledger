@@ -1,4 +1,5 @@
 import logging
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -36,21 +37,37 @@ class PayPalClient:
         self._access_token = resp.json()['access_token']
         return self._access_token
 
+    def _force_refresh_token(self) -> str:
+        """Force a token refresh by clearing the cached token."""
+        self._access_token = None
+        return self._get_access_token()
+
     def _headers(self) -> dict:
         return {
             'Authorization': f'Bearer {self._get_access_token()}',
             'Content-Type': 'application/json',
         }
 
+    def _make_request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Make an HTTP request with automatic 401 retry (token refresh)."""
+        kwargs.setdefault('headers', self._headers())
+        resp = getattr(httpx, method)(url, **kwargs)
+        if resp.status_code == 401:
+            logger.info('PayPal 401 received, refreshing access token and retrying')
+            self._force_refresh_token()
+            kwargs['headers'] = self._headers()
+            resp = getattr(httpx, method)(url, **kwargs)
+        resp.raise_for_status()
+        return resp
+
     def verify_credentials(self) -> dict:
         """Verify client_id/client_secret by fetching a token and user info."""
-        token = self._get_access_token()
-        resp = httpx.get(
+        self._get_access_token()
+        resp = self._make_request(
+            'get',
             f'{self.base_url}/v1/identity/oauth2/userinfo?schema=paypalv1.1',
-            headers=self._headers(),
             timeout=30,
         )
-        resp.raise_for_status()
         return resp.json()
 
     def fetch_transactions(self, start_date: datetime, end_date: datetime) -> list[dict]:
@@ -67,13 +84,12 @@ class PayPalClient:
                 'page_size': page_size,
                 'page': page,
             }
-            resp = httpx.get(
+            resp = self._make_request(
+                'get',
                 f'{self.base_url}/v1/reporting/transactions',
-                headers=self._headers(),
                 params=params,
                 timeout=60,
             )
-            resp.raise_for_status()
             data = resp.json()
 
             transactions = data.get('transaction_details', [])
@@ -100,13 +116,12 @@ class PayPalClient:
                 'page_size': page_size,
                 'total_required': True,
             }
-            resp = httpx.post(
+            resp = self._make_request(
+                'post',
                 f'{self.base_url}/v2/invoicing/invoices?page={page}&page_size={page_size}&total_required=true',
-                headers=self._headers(),
                 json=body,
                 timeout=60,
             )
-            resp.raise_for_status()
             data = resp.json()
 
             items = data.get('items', [])
@@ -135,13 +150,12 @@ class PayPalClient:
             if next_page_token:
                 params['next_page_token'] = next_page_token
 
-            resp = httpx.get(
+            resp = self._make_request(
+                'get',
                 f'{self.base_url}/v1/customer/disputes',
-                headers=self._headers(),
                 params=params,
                 timeout=60,
             )
-            resp.raise_for_status()
             data = resp.json()
 
             items = data.get('items', [])
@@ -152,7 +166,6 @@ class PayPalClient:
             next_link = next((l for l in links if l.get('rel') == 'next'), None)
             if next_link:
                 # Extract next_page_token from the URL
-                import urllib.parse
                 parsed = urllib.parse.urlparse(next_link['href'])
                 qs = urllib.parse.parse_qs(parsed.query)
                 next_page_token = qs.get('next_page_token', [None])[0]
@@ -180,6 +193,37 @@ def sync_paypal_data(user, days_back: int = 30) -> dict:
              'disputes_created': 0, 'disputes_updated': 0}
 
     # --- Transactions ---
+    try:
+        _sync_transactions(client, user, connection, days_back, stats)
+    except Exception:
+        logger.exception('Failed to sync PayPal transactions for %s', user.email)
+        stats['transactions_error'] = 'Failed to sync transactions'
+
+    # --- Invoices ---
+    try:
+        _sync_invoices(client, user, connection, stats)
+    except Exception:
+        logger.exception('Failed to sync PayPal invoices for %s', user.email)
+        stats['invoices_error'] = 'Failed to sync invoices'
+
+    # --- Disputes ---
+    try:
+        _sync_disputes(client, user, connection, stats)
+    except Exception:
+        logger.exception('Failed to sync PayPal disputes for %s', user.email)
+        stats['disputes_error'] = 'Failed to sync disputes'
+
+    # Update last_sync
+    from django.utils import timezone as tz
+    connection.last_sync = tz.now()
+    connection.save(update_fields=['last_sync'])
+
+    logger.info('PayPal sync complete for %s: %s', user.email, stats)
+    return stats
+
+
+def _sync_transactions(client, user, connection, days_back, stats):
+    """Sync PayPal transactions."""
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days=days_back)
 
@@ -229,7 +273,9 @@ def sync_paypal_data(user, days_back: int = 30) -> dict:
         else:
             stats['transactions_updated'] += 1
 
-    # --- Invoices ---
+
+def _sync_invoices(client, user, connection, stats):
+    """Sync PayPal invoices."""
     raw_invoices = client.fetch_invoices()
     for raw_inv in raw_invoices:
         paypal_id = raw_inv.get('id', '')
@@ -270,7 +316,9 @@ def sync_paypal_data(user, days_back: int = 30) -> dict:
         else:
             stats['invoices_updated'] += 1
 
-    # --- Disputes ---
+
+def _sync_disputes(client, user, connection, stats):
+    """Sync PayPal disputes."""
     raw_disputes = client.fetch_disputes()
     for raw_disp in raw_disputes:
         paypal_id = raw_disp.get('dispute_id', '')
@@ -302,14 +350,6 @@ def sync_paypal_data(user, days_back: int = 30) -> dict:
             stats['disputes_created'] += 1
         else:
             stats['disputes_updated'] += 1
-
-    # Update last_sync
-    from django.utils import timezone as tz
-    connection.last_sync = tz.now()
-    connection.save(update_fields=['last_sync'])
-
-    logger.info('PayPal sync complete for %s: %s', user.email, stats)
-    return stats
 
 
 def _extract_payer_name(payer_info: dict) -> str:

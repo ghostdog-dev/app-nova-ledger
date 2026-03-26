@@ -15,6 +15,7 @@ from .models import (
     MollieSettlement,
 )
 from .serializers import (
+    MollieInvoiceSerializer,
     MolliePaymentSerializer,
     MollieRefundSerializer,
     MollieSettlementSerializer,
@@ -157,4 +158,20 @@ class MollieSettlementsView(APIView):
             qs = qs.filter(status=settlement_status)
 
         serializer = MollieSettlementSerializer(qs[:500], many=True)
+        return Response(serializer.data)
+
+
+class MollieInvoicesView(APIView):
+    """List user's Mollie invoices."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = MollieInvoice.objects.filter(user=request.user).select_related('connection')
+
+        # Filter by status
+        invoice_status = request.query_params.get('status')
+        if invoice_status:
+            qs = qs.filter(status=invoice_status)
+
+        serializer = MollieInvoiceSerializer(qs[:500], many=True)
         return Response(serializer.data)

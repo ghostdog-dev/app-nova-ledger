@@ -5,7 +5,7 @@ from django.db import models
 class PayPalConnection(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='paypal_connection')
     client_id = models.CharField(max_length=255)
-    client_secret = models.TextField()  # TODO: encrypt
+    client_secret = models.TextField()  # WARNING: Encrypt before production (use django-fernet-fields or similar)
     account_email = models.CharField(max_length=255, blank=True)
     is_sandbox = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)

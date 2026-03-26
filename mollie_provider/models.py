@@ -4,7 +4,7 @@ from django.db import models
 
 class MollieConnection(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='mollie_connection')
-    api_key = models.TextField()  # TODO: encrypt
+    api_key = models.TextField()  # WARNING: Encrypt before production (use django-fernet-fields or similar)
     organization_id = models.CharField(max_length=255, blank=True)
     organization_name = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)

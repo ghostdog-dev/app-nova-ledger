@@ -8,4 +8,5 @@ urlpatterns = [
     path('payments/', views.MolliePaymentsView.as_view(), name='mollie-payments'),
     path('refunds/', views.MollieRefundsView.as_view(), name='mollie-refunds'),
     path('settlements/', views.MollieSettlementsView.as_view(), name='mollie-settlements'),
+    path('invoices/', views.MollieInvoicesView.as_view(), name='mollie-invoices'),
 ]

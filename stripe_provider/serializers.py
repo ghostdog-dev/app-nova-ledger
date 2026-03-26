@@ -98,3 +98,15 @@ class StripeSubscriptionSerializer(serializers.ModelSerializer):
             'raw_data', 'created_at_stripe', 'fetched_at',
         ]
         read_only_fields = fields
+
+
+class StripeDisputeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StripeDispute
+        fields = [
+            'id', 'stripe_id', 'charge_id',
+            'amount', 'currency', 'status', 'reason',
+            'evidence_due_by',
+            'raw_data', 'created_at_stripe', 'fetched_at',
+        ]
+        read_only_fields = fields
