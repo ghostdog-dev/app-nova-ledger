@@ -81,6 +81,15 @@ class BankTransaction(models.Model):
     # Metadata
     raw_data = models.JSONField(default=dict)  # full Powens response for reference
     created_at = models.DateTimeField(auto_now_add=True)
+    # Enrichment fields (populated by enrichment service)
+    expense_category = models.CharField(max_length=10, blank=True)  # PCG code: "606", "625", "627"
+    expense_category_label = models.CharField(max_length=100, blank=True)  # "Deplacements", "Achats non stockes"
+    business_personal = models.CharField(max_length=10, blank=True)  # "business", "personal", "unknown"
+    tva_deductible = models.BooleanField(default=False)
+    vendor_type = models.CharField(max_length=30, blank=True)  # "saas", "transport", "groceries", etc.
+    is_recurring = models.BooleanField(default=False)
+    recurring_group_id = models.CharField(max_length=100, blank=True)  # groups recurring txs together
+    enriched_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-date']

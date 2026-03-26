@@ -211,6 +211,31 @@ class BankCorrelateView(APIView):
         return Response(stats)
 
 
+class BankEnrichView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .services.enrichment import enrich_transactions
+        force = request.data.get('force', False)
+        stats = enrich_transactions(request.user, force=force)
+        return Response(stats)
+
+
+class BankSummaryView(APIView):
+    """Monthly accounting summary."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .services.summary import monthly_summary
+        year = request.query_params.get('year')
+        month = request.query_params.get('month')
+        if year and month:
+            data = monthly_summary(request.user, int(year), int(month))
+        else:
+            data = monthly_summary(request.user)
+        return Response(data)
+
+
 class BankDisconnectView(APIView):
     """Disconnect a bank connection."""
     permission_classes = [IsAuthenticated]

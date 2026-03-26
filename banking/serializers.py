@@ -65,6 +65,9 @@ class BankTransactionSerializer(serializers.ModelSerializer):
             'transaction_type', 'coming', 'card',
             'counterparty_label', 'counterparty_iban',
             'matched_email',
+            'expense_category', 'expense_category_label',
+            'business_personal', 'tva_deductible', 'vendor_type',
+            'is_recurring', 'recurring_group_id', 'enriched_at',
             'raw_data', 'created_at',
         ]
         read_only_fields = fields

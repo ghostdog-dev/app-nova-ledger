@@ -9,5 +9,7 @@ urlpatterns = [
     path('accounts/', views.BankAccountsView.as_view(), name='bank-accounts'),
     path('transactions/', views.BankTransactionsView.as_view(), name='bank-transactions'),
     path('correlate/', views.BankCorrelateView.as_view(), name='bank-correlate'),
+    path('enrich/', views.BankEnrichView.as_view(), name='bank-enrich'),
+    path('summary/', views.BankSummaryView.as_view(), name='bank-summary'),
     path('disconnect/<int:connection_id>/', views.BankDisconnectView.as_view(), name='bank-disconnect'),
 ]

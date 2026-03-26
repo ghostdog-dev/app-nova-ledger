@@ -10,32 +10,13 @@ from decimal import Decimal
 from django.conf import settings
 
 from banking.models import BankTransaction, TransactionMatch
+from banking.services.utils import normalize_vendor
 from emails.models import Transaction
 
 logger = logging.getLogger(__name__)
 
 DATE_TOLERANCE_DAYS = 3
 
-
-def _normalize_vendor(name):
-    """Normalize vendor name for comparison. Lowercase, strip suffixes, common bank prefixes."""
-    if not name:
-        return ''
-    name = name.lower().strip()
-    # Strip common bank label prefixes
-    for prefix in ['cb*', 'cb ', 'carte ', 'paiement par carte ', 'prlv ', 'vir ', 'virement ']:
-        if name.startswith(prefix):
-            name = name[len(prefix):]
-    # Strip corporate suffixes
-    name = re.sub(r'\b(inc\.?|ltd\.?|llc\.?|pbc\.?|sas\.?|sa\.?|gmbh\.?|co\.?|corp\.?|limited|pty\.?)\s*$', '', name)
-    # Strip city names at end (common pattern: "VENDOR PARIS", "VENDOR LYON 02")
-    name = re.sub(r'\s+(paris|lyon|marseille|bordeaux|toulouse|nantes|lille|nice|strasbourg|montpellier)\s*\d*\s*$', '', name)
-    # Strip trailing numbers/codes
-    name = re.sub(r'\s+\d{2,}$', '', name)
-    # Clean up
-    name = name.strip(' ,.*')
-    name = re.sub(r'\s+', ' ', name).strip()
-    return name
 
 
 def _vendors_match_exact(bank_vendor, email_vendor):
@@ -85,7 +66,7 @@ def _find_best_match(btx, email_candidates):
     Find the best email transaction match for a bank transaction.
     Returns {tx, confidence, method} or None.
     """
-    bank_vendor = _normalize_vendor(btx.simplified_wording or btx.original_wording)
+    bank_vendor = normalize_vendor(btx.simplified_wording or btx.original_wording)
     bank_abs_value = abs(btx.value)
     bank_currency = btx.account.currency if btx.account else ''
 
@@ -191,7 +172,7 @@ def correlate_transactions(user):
     for etx in email_txns:
         email_candidates.append({
             'tx': etx,
-            'normalized_vendor': _normalize_vendor(etx.vendor_name),
+            'normalized_vendor': normalize_vendor(etx.vendor_name),
             'abs_amount': abs(etx.amount),
         })
 
