@@ -203,19 +203,10 @@ AI_RETRY_BASE_DELAY = int(os.getenv('AI_RETRY_BASE_DELAY', '2'))
 AI_EMAIL_BODY_MAX_CHARS = int(os.getenv('AI_EMAIL_BODY_MAX_CHARS', '4000'))
 DEFAULT_EMAIL_LOOKBACK_DAYS = int(os.getenv('DEFAULT_EMAIL_LOOKBACK_DAYS', '30'))
 
-# PayPal OAuth (Login with PayPal / Identity API)
-PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID', '')
-PAYPAL_CLIENT_SECRET = os.getenv('PAYPAL_CLIENT_SECRET', '')
-PAYPAL_REDIRECT_URI = os.getenv('PAYPAL_REDIRECT_URI', 'http://localhost:8000/callback/paypal/')
-PAYPAL_SANDBOX = os.getenv('PAYPAL_SANDBOX', 'true').lower() == 'true'
+# PayPal — API key auth (user provides their own client_id + client_secret)
+# No platform-level PayPal credentials needed; credentials are per-user.
 
-# Mollie Connect OAuth2
-MOLLIE_CLIENT_ID = os.getenv('MOLLIE_CLIENT_ID', '')
-MOLLIE_CLIENT_SECRET = os.getenv('MOLLIE_CLIENT_SECRET', '')
-MOLLIE_REDIRECT_URI = os.getenv('MOLLIE_REDIRECT_URI', 'http://localhost:8000/callback/mollie/')
-
-# Stripe Connect OAuth
+# Stripe — API key auth (user provides their own sk_test_/sk_live_ key)
+# STRIPE_SECRET_KEY is only needed for future webhook signature verification
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
-STRIPE_CLIENT_ID = os.getenv('STRIPE_CLIENT_ID', '')  # ca_xxx from Stripe Connect
-STRIPE_CONNECT_REDIRECT_URI = os.getenv('STRIPE_CONNECT_REDIRECT_URI', 'http://localhost:8000/callback/stripe/')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')

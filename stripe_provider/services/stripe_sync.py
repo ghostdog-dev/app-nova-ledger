@@ -1,7 +1,8 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import stripe
+from django.utils import timezone as tz
 
 from ..models import (
     StripeBalanceTransaction,
@@ -44,9 +45,12 @@ def _paginate(list_method, **params):
     return all_items
 
 
-def sync_balance_transactions(user, connection, access_token):
+def sync_balance_transactions(user, connection, access_token, created_gte=None):
     """Fetch and store Stripe balance transactions."""
-    items = _paginate(stripe.BalanceTransaction.list, api_key=access_token, limit=100)
+    params = {'api_key': access_token, 'limit': 100}
+    if created_gte:
+        params['created'] = {'gte': created_gte}
+    items = _paginate(stripe.BalanceTransaction.list, **params)
     created = 0
 
     for item in items:
@@ -77,9 +81,12 @@ def sync_balance_transactions(user, connection, access_token):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_charges(user, connection, access_token):
+def sync_charges(user, connection, access_token, created_gte=None):
     """Fetch and store Stripe charges."""
-    items = _paginate(stripe.Charge.list, api_key=access_token, limit=100)
+    params = {'api_key': access_token, 'limit': 100}
+    if created_gte:
+        params['created'] = {'gte': created_gte}
+    items = _paginate(stripe.Charge.list, **params)
     created = 0
 
     for item in items:
@@ -125,9 +132,12 @@ def sync_charges(user, connection, access_token):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_payouts(user, connection, access_token):
+def sync_payouts(user, connection, access_token, created_gte=None):
     """Fetch and store Stripe payouts."""
-    items = _paginate(stripe.Payout.list, api_key=access_token, limit=100)
+    params = {'api_key': access_token, 'limit': 100}
+    if created_gte:
+        params['created'] = {'gte': created_gte}
+    items = _paginate(stripe.Payout.list, **params)
     created = 0
 
     for item in items:
@@ -157,9 +167,12 @@ def sync_payouts(user, connection, access_token):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_invoices(user, connection, access_token):
+def sync_invoices(user, connection, access_token, created_gte=None):
     """Fetch and store Stripe invoices."""
-    items = _paginate(stripe.Invoice.list, api_key=access_token, limit=100)
+    params = {'api_key': access_token, 'limit': 100}
+    if created_gte:
+        params['created'] = {'gte': created_gte}
+    items = _paginate(stripe.Invoice.list, **params)
     created = 0
 
     for item in items:
@@ -211,9 +224,12 @@ def sync_invoices(user, connection, access_token):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_subscriptions(user, connection, access_token):
+def sync_subscriptions(user, connection, access_token, created_gte=None):
     """Fetch and store Stripe subscriptions."""
-    items = _paginate(stripe.Subscription.list, api_key=access_token, limit=100, status='all')
+    params = {'api_key': access_token, 'limit': 100, 'status': 'all'}
+    if created_gte:
+        params['created'] = {'gte': created_gte}
+    items = _paginate(stripe.Subscription.list, **params)
     created = 0
 
     for item in items:
@@ -268,9 +284,12 @@ def sync_subscriptions(user, connection, access_token):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_disputes(user, connection, access_token):
+def sync_disputes(user, connection, access_token, created_gte=None):
     """Fetch and store Stripe disputes."""
-    items = _paginate(stripe.Dispute.list, api_key=access_token, limit=100)
+    params = {'api_key': access_token, 'limit': 100}
+    if created_gte:
+        params['created'] = {'gte': created_gte}
+    items = _paginate(stripe.Dispute.list, **params)
     created = 0
 
     for item in items:
@@ -309,6 +328,9 @@ def sync_stripe_data(user, days_back: int = 90):
     # Pass access_token per-request (Stripe SDK uses api_key= kwarg)
     access_token = connection.access_token
 
+    # Compute created_gte as Unix timestamp for date filtering
+    created_gte = int((datetime.now(tz=timezone.utc) - timedelta(days=days_back)).timestamp())
+
     stats = {}
 
     sync_funcs = [
@@ -322,13 +344,12 @@ def sync_stripe_data(user, days_back: int = 90):
 
     for name, func in sync_funcs:
         try:
-            stats[name] = func(user, connection, access_token)
+            stats[name] = func(user, connection, access_token, created_gte=created_gte)
         except Exception:
             logger.exception('Failed to sync %s for user %s', name, user.email)
             stats[name] = {'error': f'Failed to sync {name}'}
 
     # Update last_sync
-    from django.utils import timezone as tz
     connection.last_sync = tz.now()
     connection.save(update_fields=['last_sync'])
 

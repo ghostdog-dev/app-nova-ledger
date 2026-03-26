@@ -894,30 +894,73 @@ def test_page(request):
             } catch(e) { console.error('Summary load error:', e); }
         }
 
-        /* --- OAuth Connect (Stripe, PayPal, Mollie) --- */
-        function oauthConnect(provider) {
-            return async function() {
-                this.disabled = true;
-                showStatus('Redirecting to ' + provider + '...', true);
-                try {
-                    var resp = await fetch('/api/' + provider + '/connect/', {
-                        method: 'POST',
-                        headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
-                    });
-                    var data = await resp.json();
-                    var url = data.authorize_url;
-                    if (url) {
-                        window.location.href = url;
-                    } else {
-                        showStatus(provider + ' error: ' + JSON.stringify(data));
-                    }
-                } catch(e) { showStatus('Error: ' + e.message); }
-                this.disabled = false;
-            };
-        }
-        document.getElementById('btn-stripe-connect').addEventListener('click', oauthConnect('stripe'));
-        document.getElementById('btn-paypal-connect').addEventListener('click', oauthConnect('paypal'));
-        document.getElementById('btn-mollie-connect').addEventListener('click', oauthConnect('mollie'));
+        /* --- Provider Connect (Stripe, PayPal, Mollie) --- */
+        document.getElementById('btn-stripe-connect').addEventListener('click', async function() {
+            var key = prompt('Enter your Stripe Secret Key (sk_test_... or sk_live_...):');
+            if (!key) return;
+            this.disabled = true;
+            showStatus('Connecting Stripe...', true);
+            try {
+                var resp = await fetch('/api/stripe/connect/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_key: key}),
+                });
+                var data = await resp.json();
+                if (resp.ok) {
+                    showStatus('Stripe connected: ' + (data.account_name || data.account_id));
+                    loadProviders();
+                } else {
+                    showStatus('Stripe error: ' + (data.error || JSON.stringify(data)));
+                }
+            } catch(e) { showStatus('Error: ' + e.message); }
+            this.disabled = false;
+        });
+        document.getElementById('btn-paypal-connect').addEventListener('click', async function() {
+            var clientId = prompt('Enter your PayPal Client ID:');
+            if (!clientId) return;
+            var secret = prompt('Enter your PayPal Client Secret:');
+            if (!secret) return;
+            var sandbox = confirm('Use sandbox environment? (OK = sandbox, Cancel = live)');
+            this.disabled = true;
+            showStatus('Connecting PayPal...', true);
+            try {
+                var resp = await fetch('/api/paypal/connect/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({client_id: clientId, client_secret: secret, is_sandbox: sandbox}),
+                });
+                var data = await resp.json();
+                if (resp.ok) {
+                    showStatus('PayPal connected!' + (data.connection ? ' (' + (data.connection.account_email || 'sandbox=' + data.connection.is_sandbox) + ')' : ''));
+                    loadProviders();
+                } else {
+                    showStatus('PayPal error: ' + (data.error || JSON.stringify(data)));
+                }
+            } catch(e) { showStatus('Error: ' + e.message); }
+            this.disabled = false;
+        });
+        document.getElementById('btn-mollie-connect').addEventListener('click', async function() {
+            var key = prompt('Enter your Mollie API Key (test_... or live_...):');
+            if (!key) return;
+            this.disabled = true;
+            showStatus('Verifying Mollie API key...', true);
+            try {
+                var resp = await fetch('/api/mollie/connect/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_key: key}),
+                });
+                var data = await resp.json();
+                if (resp.ok) {
+                    showStatus('Mollie connected! Org: ' + (data.organization_name || 'N/A') + ' (' + data.key_type + ' key)');
+                    loadProviders();
+                } else {
+                    showStatus('Mollie error: ' + (data.error || JSON.stringify(data)));
+                }
+            } catch(e) { showStatus('Error: ' + e.message); }
+            this.disabled = false;
+        });
 
         /* --- Generic Provider Sync --- */
         async function syncProvider(provider) {

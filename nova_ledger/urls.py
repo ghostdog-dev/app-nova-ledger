@@ -3,9 +3,6 @@ from django.urls import include, path
 
 from accounts.views import callback_page, login_page, session_login_view
 from banking.views import BankCallbackView
-from paypal_provider.views import PayPalCallbackView
-from stripe_provider.views import StripeCallbackView
-from mollie_provider.views import MollieCallbackView
 from emails.views import test_page as emails_test_page
 
 urlpatterns = [
@@ -19,9 +16,6 @@ urlpatterns = [
     path('api/stripe/', include('stripe_provider.urls')),
     path('api/mollie/', include('mollie_provider.urls')),
     path('callback/powens/', BankCallbackView.as_view(), name='powens-callback'),
-    path('callback/paypal/', PayPalCallbackView.as_view(), name='paypal-callback'),
-    path('callback/stripe/', StripeCallbackView.as_view(), name='stripe-callback'),
-    path('callback/mollie/', MollieCallbackView.as_view(), name='mollie-callback'),
     path('login/', login_page, name='login_page'),
     path('callback/', callback_page, name='callback_page'),
     path('api/auth/session-login/', session_login_view, name='session_login'),

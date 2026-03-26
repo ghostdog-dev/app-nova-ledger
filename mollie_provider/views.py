@@ -1,26 +1,12 @@
 import logging
-import secrets
-from datetime import timedelta
-from urllib.parse import urlencode
 
-from django.conf import settings as django_settings
-from django.shortcuts import redirect
-from django.utils import timezone
-from django.views import View
+import httpx
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-import httpx
-
-from .models import (
-    MollieConnection,
-    MollieInvoice,
-    MolliePayment,
-    MollieRefund,
-    MollieSettlement,
-)
+from .models import MollieInvoice, MolliePayment, MollieRefund, MollieSettlement
 from .serializers import (
     MollieInvoiceSerializer,
     MolliePaymentSerializer,
@@ -31,116 +17,61 @@ from .services.mollie_sync import MollieClient, sync_mollie_data
 
 logger = logging.getLogger(__name__)
 
-MOLLIE_AUTHORIZE_URL = 'https://my.mollie.com/oauth2/authorize'
-MOLLIE_TOKEN_URL = 'https://api.mollie.com/oauth2/tokens'
-MOLLIE_SCOPES = 'organizations.read payments.read refunds.read settlements.read invoices.read'
-
 
 class MollieConnectView(APIView):
-    """Start the Mollie Connect OAuth2 flow -- returns an authorize URL."""
+    """Connect Mollie via API key. User provides test_... or live_... key."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        state = secrets.token_urlsafe(32)
-        request.session['mollie_oauth_state'] = state
+        api_key = request.data.get('api_key', '').strip()
+        if not api_key:
+            return Response({'error': 'api_key required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        params = {
-            'client_id': django_settings.MOLLIE_CLIENT_ID,
-            'redirect_uri': django_settings.MOLLIE_REDIRECT_URI,
-            'response_type': 'code',
-            'scope': MOLLIE_SCOPES,
-            'state': state,
-        }
-        authorize_url = f'{MOLLIE_AUTHORIZE_URL}?{urlencode(params)}'
-
-        return Response({'authorize_url': authorize_url})
-
-
-class MollieCallbackView(View):
-    """Handle OAuth2 callback from Mollie. No DRF auth -- external redirect."""
-
-    def get(self, request):
-        error = request.GET.get('error')
-        if error:
-            error_desc = request.GET.get('error_description', error)
-            logger.warning('Mollie OAuth callback error: %s — %s', error, error_desc)
-            return redirect(f'/emails/test/?mollie_error={error}')
-
-        code = request.GET.get('code', '')
-        state = request.GET.get('state', '')
-
-        if not code:
-            logger.warning('Mollie callback missing code')
-            return redirect('/emails/test/?mollie_error=missing_code')
-
-        # Validate state
-        user = request.user if request.user.is_authenticated else None
-        if not user:
-            logger.warning('Mollie callback: no authenticated user in session')
-            return redirect('/login/?next=/emails/test/&mollie_error=not_authenticated')
-
-        expected_state = request.session.pop('mollie_oauth_state', None)
-        if not expected_state or state != expected_state:
-            logger.warning('Mollie callback: state mismatch (CSRF check failed)')
-            return redirect('/emails/test/?mollie_error=state_mismatch')
-
-        # Exchange code for tokens
-        try:
-            token_resp = httpx.post(
-                MOLLIE_TOKEN_URL,
-                data={
-                    'grant_type': 'authorization_code',
-                    'code': code,
-                    'redirect_uri': django_settings.MOLLIE_REDIRECT_URI,
-                },
-                auth=(django_settings.MOLLIE_CLIENT_ID, django_settings.MOLLIE_CLIENT_SECRET),
-                timeout=30.0,
+        if not api_key.startswith(('test_', 'live_')):
+            return Response(
+                {'error': 'Invalid API key format. Must start with test_ or live_'},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            token_resp.raise_for_status()
-            token_data = token_resp.json()
-        except httpx.HTTPStatusError as e:
-            logger.error('Mollie token exchange failed: %s %s', e.response.status_code, e.response.text)
-            return redirect('/emails/test/?mollie_error=token_exchange_failed')
-        except Exception:
-            logger.exception('Unexpected error during Mollie token exchange')
-            return redirect('/emails/test/?mollie_error=token_exchange_error')
 
-        access_token = token_data['access_token']
-        refresh_token = token_data.get('refresh_token', '')
-        expires_in = token_data.get('expires_in', 3600)
-        token_expires_at = timezone.now() + timedelta(seconds=expires_in)
-
-        # Fetch organization info
+        # Verify key by calling /v2/organizations/me
         org_id = ''
         org_name = ''
         try:
-            org_resp = httpx.get(
-                'https://api.mollie.com/v2/organizations/me',
-                headers={'Authorization': f'Bearer {access_token}'},
-                timeout=30.0,
-            )
-            org_resp.raise_for_status()
-            org_data = org_resp.json()
+            client = MollieClient(api_key)
+            org_data = client.get_organization()
             org_id = org_data.get('id', '')
             org_name = org_data.get('name', '')
+            client.close()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                return Response({'error': 'Invalid API key'}, status=status.HTTP_401_UNAUTHORIZED)
+            logger.error('Mollie API error during connect: %s %s', e.response.status_code, e.response.text)
+            return Response(
+                {'error': f'Mollie API error: {e.response.status_code}'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
         except Exception:
-            logger.exception('Failed to fetch Mollie organization info')
+            logger.exception('Unexpected error verifying Mollie API key')
+            return Response({'error': 'Failed to verify API key'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         # Store connection
         MollieConnection.objects.update_or_create(
-            user=user,
+            user=request.user,
             defaults={
-                'access_token': access_token,
-                'refresh_token': refresh_token,
-                'token_expires_at': token_expires_at,
+                'api_key': api_key,
                 'organization_id': org_id,
                 'organization_name': org_name,
                 'is_active': True,
             },
         )
-        logger.info('Mollie connected for user %s (org: %s)', user.email, org_name)
+        logger.info('Mollie connected for user %s (org: %s)', request.user.email, org_name)
 
-        return redirect('/emails/test/?mollie_connected=true')
+        return Response({
+            'status': 'connected',
+            'organization_id': org_id,
+            'organization_name': org_name,
+            'key_type': 'test' if api_key.startswith('test_') else 'live',
+        })
 
 
 class MollieSyncView(APIView):

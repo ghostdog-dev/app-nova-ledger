@@ -4,12 +4,10 @@ from django.db import models
 
 class PayPalConnection(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='paypal_connection')
-    paypal_user_id = models.CharField(max_length=255, blank=True)  # payer_id from userinfo
-    access_token = models.TextField()  # WARNING: encrypt before production
-    refresh_token = models.TextField(blank=True)
-    token_expires_at = models.DateTimeField(null=True, blank=True)
-    account_email = models.CharField(max_length=255, blank=True)
+    client_id = models.CharField(max_length=255, default='')
+    client_secret = models.TextField(default='')  # WARNING: encrypt before production
     is_sandbox = models.BooleanField(default=True)
+    account_email = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
     last_sync = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

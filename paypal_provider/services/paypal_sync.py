@@ -4,7 +4,6 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import httpx
-from django.conf import settings as django_settings
 from django.utils import timezone as tz
 
 from ..models import PayPalConnection, PayPalDispute, PayPalInvoice, PayPalTransaction
@@ -16,61 +15,56 @@ LIVE_BASE = 'https://api-m.paypal.com'
 
 
 class PayPalClient:
-    """PayPal REST API client using OAuth2 user tokens."""
+    """PayPal REST API client using client_credentials (API key auth)."""
 
     def __init__(self, connection: PayPalConnection):
         self.connection = connection
         self.base_url = SANDBOX_BASE if connection.is_sandbox else LIVE_BASE
+        self._access_token: str | None = None
+        self._token_expires_at: datetime | None = None
 
-    def _ensure_valid_token(self):
-        """Refresh the access token if expired or about to expire (60s buffer)."""
+    def _get_access_token(self) -> str:
+        """Get a valid access token, refreshing via client_credentials if needed."""
         if (
-            self.connection.token_expires_at
-            and self.connection.token_expires_at > tz.now() + timedelta(seconds=60)
+            self._access_token
+            and self._token_expires_at
+            and self._token_expires_at > datetime.now(timezone.utc) + timedelta(seconds=60)
         ):
-            return  # Token still valid
+            return self._access_token
 
-        if not self.connection.refresh_token:
-            raise ValueError('PayPal token expired and no refresh token available. Please reconnect.')
-
-        logger.info('PayPal token expired for user %s, refreshing...', self.connection.user.email)
+        logger.info('PayPal: obtaining access token for user %s', self.connection.user.email)
         resp = httpx.post(
             f'{self.base_url}/v1/oauth2/token',
-            auth=(django_settings.PAYPAL_CLIENT_ID, django_settings.PAYPAL_CLIENT_SECRET),
-            data={
-                'grant_type': 'refresh_token',
-                'refresh_token': self.connection.refresh_token,
-            },
+            auth=(self.connection.client_id, self.connection.client_secret),
+            data={'grant_type': 'client_credentials'},
             headers={'Accept': 'application/json'},
             timeout=30,
         )
         resp.raise_for_status()
         token_data = resp.json()
 
-        self.connection.access_token = token_data['access_token']
-        if token_data.get('refresh_token'):
-            self.connection.refresh_token = token_data['refresh_token']
-        expires_in = token_data.get('expires_in', 28800)
-        self.connection.token_expires_at = tz.now() + timedelta(seconds=expires_in)
-        self.connection.save(update_fields=['access_token', 'refresh_token', 'token_expires_at'])
-        logger.info('PayPal token refreshed for user %s', self.connection.user.email)
+        self._access_token = token_data['access_token']
+        expires_in = token_data.get('expires_in', 32400)  # PayPal default ~9 hours
+        self._token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
+        logger.info('PayPal: access token obtained (expires in %ds)', expires_in)
+        return self._access_token
 
     def _headers(self) -> dict:
-        self._ensure_valid_token()
+        token = self._get_access_token()
         return {
-            'Authorization': f'Bearer {self.connection.access_token}',
+            'Authorization': f'Bearer {token}',
             'Content-Type': 'application/json',
         }
 
     def _make_request(self, method: str, url: str, **kwargs) -> httpx.Response:
-        """Make an HTTP request with automatic 401 retry (token refresh)."""
+        """Make an HTTP request with automatic 401 retry (get new token)."""
         kwargs.setdefault('headers', self._headers())
         resp = getattr(httpx, method)(url, **kwargs)
         if resp.status_code == 401:
             logger.info('PayPal 401 received, forcing token refresh and retrying')
-            # Force refresh by expiring the token
-            self.connection.token_expires_at = None
-            self._ensure_valid_token()
+            self._access_token = None
+            self._token_expires_at = None
             kwargs['headers'] = self._headers()
             resp = getattr(httpx, method)(url, **kwargs)
         resp.raise_for_status()
@@ -220,7 +214,6 @@ def sync_paypal_data(user, days_back: int = 30) -> dict:
         stats['disputes_error'] = 'Failed to sync disputes'
 
     # Update last_sync
-    from django.utils import timezone as tz
     connection.last_sync = tz.now()
     connection.save(update_fields=['last_sync'])
 

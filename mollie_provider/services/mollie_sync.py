@@ -1,9 +1,8 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 import httpx
-from django.conf import settings as django_settings
 from django.utils import timezone
 
 from ..models import (
@@ -17,42 +16,6 @@ from ..models import (
 logger = logging.getLogger(__name__)
 
 MOLLIE_API_BASE = 'https://api.mollie.com/v2'
-MOLLIE_TOKEN_URL = 'https://api.mollie.com/oauth2/tokens'
-
-
-def refresh_token_if_needed(connection: MollieConnection) -> str:
-    """Refresh the Mollie access token if expired (or about to expire in 60s).
-
-    Returns the current valid access token.
-    """
-    if connection.token_expires_at and connection.token_expires_at > timezone.now() + timedelta(seconds=60):
-        return connection.access_token
-
-    if not connection.refresh_token:
-        raise ValueError('Mollie token expired and no refresh token available')
-
-    logger.info('Refreshing Mollie token for user %s', connection.user.email)
-
-    resp = httpx.post(
-        MOLLIE_TOKEN_URL,
-        data={
-            'grant_type': 'refresh_token',
-            'refresh_token': connection.refresh_token,
-        },
-        auth=(django_settings.MOLLIE_CLIENT_ID, django_settings.MOLLIE_CLIENT_SECRET),
-        timeout=30.0,
-    )
-    resp.raise_for_status()
-    token_data = resp.json()
-
-    connection.access_token = token_data['access_token']
-    connection.refresh_token = token_data.get('refresh_token', connection.refresh_token)
-    expires_in = token_data.get('expires_in', 3600)
-    connection.token_expires_at = timezone.now() + timedelta(seconds=expires_in)
-    connection.save(update_fields=['access_token', 'refresh_token', 'token_expires_at'])
-
-    logger.info('Mollie token refreshed for user %s', connection.user.email)
-    return connection.access_token
 
 
 class MollieClient:
@@ -152,9 +115,8 @@ def sync_mollie_data(user) -> dict:
     if not connection.is_active:
         raise ValueError('Mollie connection is inactive')
 
-    # Refresh token if needed before sync
-    access_token = refresh_token_if_needed(connection)
-    client = MollieClient(access_token)
+    # API keys don't expire -- use directly
+    client = MollieClient(connection.api_key)
     stats = {'payments': 0, 'refunds': 0, 'settlements': 0, 'invoices': 0}
 
     try:

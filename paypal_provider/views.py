@@ -1,16 +1,10 @@
 import logging
-from datetime import timedelta
 
-from django.conf import settings as s
-from django.shortcuts import redirect
-from django.utils import timezone
-from django.views import View
+import httpx
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-import httpx
 
 from .models import PayPalConnection, PayPalDispute, PayPalInvoice, PayPalTransaction
 from .serializers import (
@@ -23,119 +17,83 @@ from .services.paypal_sync import sync_paypal_data
 
 logger = logging.getLogger(__name__)
 
-SANDBOX_BASE = 'https://www.sandbox.paypal.com'
-LIVE_BASE = 'https://www.paypal.com'
 SANDBOX_API_BASE = 'https://api-m.sandbox.paypal.com'
 LIVE_API_BASE = 'https://api-m.paypal.com'
 
 
 class PayPalConnectView(APIView):
-    """Start PayPal OAuth flow -- returns authorize URL."""
+    """Connect PayPal using API key credentials (client_id + client_secret)."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        base = SANDBOX_BASE if s.PAYPAL_SANDBOX else LIVE_BASE
-        authorize_url = (
-            f'{base}/signin/authorize'
-            f'?flowEntry=static'
-            f'&client_id={s.PAYPAL_CLIENT_ID}'
-            f'&response_type=code'
-            f'&scope=openid email https://uri.paypal.com/services/reporting/search/read'
-            f'&redirect_uri={s.PAYPAL_REDIRECT_URI}'
-        )
-        return Response({'authorize_url': authorize_url})
+        client_id = request.data.get('client_id', '').strip()
+        client_secret = request.data.get('client_secret', '').strip()
+        is_sandbox = request.data.get('is_sandbox', True)
 
+        if not client_id or not client_secret:
+            return Response(
+                {'error': 'client_id and client_secret are required'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-class PayPalCallbackView(View):
-    """Handle OAuth callback from PayPal. No DRF auth -- external redirect."""
-
-    def get(self, request):
-        code = request.GET.get('code')
-        error = request.GET.get('error')
-
-        if error:
-            logger.warning('PayPal callback error: %s', error)
-            return redirect('/emails/test/?paypal_error=' + error)
-
-        if not code:
-            logger.warning('PayPal callback missing code')
-            return redirect('/emails/test/?paypal_error=missing_code')
-
-        user = request.user if request.user.is_authenticated else None
-        if not user:
-            logger.warning('PayPal callback: no authenticated user in session')
-            return redirect('/login/?next=/emails/test/&paypal_error=not_authenticated')
-
-        api_base = SANDBOX_API_BASE if s.PAYPAL_SANDBOX else LIVE_API_BASE
-
-        # 1. Exchange authorization code for tokens
+        # Verify credentials by requesting an access token
+        api_base = SANDBOX_API_BASE if is_sandbox else LIVE_API_BASE
         try:
             token_resp = httpx.post(
                 f'{api_base}/v1/oauth2/token',
-                auth=(s.PAYPAL_CLIENT_ID, s.PAYPAL_CLIENT_SECRET),
-                data={
-                    'grant_type': 'authorization_code',
-                    'code': code,
-                },
+                auth=(client_id, client_secret),
+                data={'grant_type': 'client_credentials'},
                 headers={'Accept': 'application/json'},
                 timeout=30,
             )
             token_resp.raise_for_status()
-            token_data = token_resp.json()
         except httpx.HTTPStatusError as e:
-            logger.error('PayPal token exchange failed: %s %s', e.response.status_code, e.response.text)
-            return redirect('/emails/test/?paypal_error=token_exchange_failed')
-        except Exception:
-            logger.exception('Unexpected error during PayPal token exchange')
-            return redirect('/emails/test/?paypal_error=token_exchange_error')
-
-        access_token = token_data.get('access_token', '')
-        refresh_token = token_data.get('refresh_token', '')
-        expires_in = token_data.get('expires_in', 28800)
-        token_expires_at = timezone.now() + timedelta(seconds=expires_in)
-
-        # 2. Fetch user info
-        paypal_user_id = ''
-        account_email = ''
-        try:
-            userinfo_resp = httpx.get(
-                f'{api_base}/v1/identity/oauth2/userinfo?schema=paypalv1.2',
-                headers={'Authorization': f'Bearer {access_token}'},
-                timeout=30,
+            logger.warning('PayPal credential verification failed: %s %s', e.response.status_code, e.response.text)
+            return Response(
+                {'error': 'Invalid PayPal credentials. Please check your client_id and client_secret.'},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            userinfo_resp.raise_for_status()
-            userinfo = userinfo_resp.json()
-
-            paypal_user_id = userinfo.get('payer_id', '') or userinfo.get('user_id', '')
-
-            emails = userinfo.get('emails', [])
-            for email_info in emails:
-                if email_info.get('primary'):
-                    account_email = email_info.get('value', '')
-                    break
-            if not account_email and emails:
-                account_email = emails[0].get('value', '')
         except Exception:
-            logger.exception('Failed to fetch PayPal user info (tokens stored anyway)')
+            logger.exception('Unexpected error verifying PayPal credentials')
+            return Response(
+                {'error': 'Failed to verify PayPal credentials'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
 
-        # 3. Store connection
+        # Store connection
         connection, created = PayPalConnection.objects.update_or_create(
-            user=user,
+            user=request.user,
             defaults={
-                'paypal_user_id': paypal_user_id,
-                'access_token': access_token,
-                'refresh_token': refresh_token,
-                'token_expires_at': token_expires_at,
-                'account_email': account_email,
-                'is_sandbox': s.PAYPAL_SANDBOX,
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'is_sandbox': is_sandbox,
                 'is_active': True,
             },
         )
 
         action = 'connected' if created else 'updated'
-        logger.info('PayPal %s for user %s (email: %s)', action, user.email, account_email)
+        logger.info('PayPal %s for user %s (sandbox=%s)', action, request.user.email, is_sandbox)
 
-        return redirect('/emails/test/?paypal_connected=true')
+        serializer = PayPalConnectionSerializer(connection)
+        return Response({
+            'status': action,
+            'connection': serializer.data,
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class PayPalDisconnectView(APIView):
+    """Disconnect PayPal -- deactivate the connection."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            connection = request.user.paypal_connection
+        except PayPalConnection.DoesNotExist:
+            return Response({'error': 'No PayPal connection found'}, status=status.HTTP_404_NOT_FOUND)
+
+        connection.is_active = False
+        connection.save(update_fields=['is_active'])
+        return Response({'status': 'disconnected'})
 
 
 class PayPalSyncView(APIView):
