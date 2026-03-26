@@ -123,10 +123,9 @@ EXTRACTION_SYSTEM_PROMPT = (
     "- Currency: extract from email content. If not found, leave empty.\n"
     "- Set status='complete' if you have vendor + amount + date, otherwise 'partial'\n"
     "- confidence: 0.0-1.0 for how sure you are this is a real transaction\n"
-    "- CRITICAL ORDER: You MUST call save_transactions FIRST, then mark_emails_processed AFTER.\n"
-    "  NEVER call mark_emails_processed before save_transactions. Save first, mark second.\n"
-    "- Call save_transactions with ALL transactions in one call, not one by one.\n"
-    "- Process every email in the batch\n"
+    "- Call save_transactions with ALL transactions in one single call (not one by one).\n"
+    "- You do NOT need to mark emails — the system handles that automatically.\n"
+    "- Process every email in the batch. For each, either save a transaction or skip if not transactional.\n"
     "</rules>"
 )
 
@@ -327,29 +326,9 @@ EXTRACTION_TOOLS = [
             "required": ["transactions"],
         },
     },
-    {
-        "name": "mark_emails_processed",
-        "description": (
-            "Mark emails as processed (transaction extracted) or ignored (not transactional). "
-            "Call this after you've analyzed each email."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "email_ids": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "List of email database IDs to mark.",
-                },
-                "status": {
-                    "type": "string",
-                    "enum": ["processed", "ignored"],
-                    "description": "Status to set.",
-                },
-            },
-            "required": ["email_ids", "status"],
-                    },
-            },
+    # mark_emails_processed REMOVED from extraction tools.
+    # The pipeline code marks emails based on whether a Transaction was created.
+    # This prevents the AI from marking emails as "processed" without saving data.
 ]
 
 def _execute_think(user, params):
@@ -387,7 +366,6 @@ EXTRACTION_TOOL_HANDLERS = {
     'think': _execute_think,
     'get_email_body': _execute_get_email_body,
     'save_transactions': _execute_save_transactions,
-    'mark_emails_processed': _safe_mark_emails_processed,
 }
 
 
@@ -902,11 +880,28 @@ def _process_extraction_batch(api_key, user, emails_data, batch_num, total_batch
         logger.error(f'[Extraction] Batch {batch_num} error (thread-{thread_id}): {e}')
         batch_stats["errors"] += 1
 
+    # Auto-mark emails based on whether a Transaction was created
+    batch_email_ids = [e['id'] for e in emails_data]
+    marked = 0
+    retry = 0
+    for eid in batch_email_ids:
+        has_tx = Transaction.objects.filter(user=user, email_id=eid).exists()
+        if has_tx:
+            Email.objects.filter(id=eid, user=user).update(status='processed')
+            marked += 1
+        else:
+            # Keep as triage_passed for potential retry
+            Email.objects.filter(id=eid, user=user).update(status='triage_passed')
+            retry += 1
+
+    batch_stats["emails_processed"] = marked
+    batch_stats["emails_retry"] = retry
+
     logger.info(
         f'[Extraction] Batch {batch_num}/{total_batches} done -- '
         f'created={batch_stats["transactions_created"]}, '
         f'updated={batch_stats["transactions_updated"]}, '
-        f'processed={batch_stats["emails_processed"]} (thread-{thread_id})'
+        f'processed={marked}, retry={retry} (thread-{thread_id})'
     )
     return batch_stats
 
