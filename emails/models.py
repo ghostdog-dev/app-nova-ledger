@@ -20,6 +20,7 @@ class Email(models.Model):
     from_name = models.CharField(max_length=255, blank=True)
     subject = models.CharField(max_length=500, blank=True)
     snippet = models.TextField(blank=True)
+    body = models.TextField(blank=True)  # Full email body text (cached or for test emails)
     date = models.DateTimeField()
     labels = models.JSONField(default=list)
     has_attachments = models.BooleanField(default=False)

@@ -347,6 +347,10 @@ def _execute_get_email_body(user, params):
     except Email.DoesNotExist:
         return {"error": f"Email {email_id} not found"}
 
+    # If body is already stored in DB (test emails or cached), return it directly
+    if email_obj.body:
+        return {"email_id": email_id, "body": email_obj.body}
+
     if email_obj.provider == 'google':
         body = _fetch_gmail_body(email_obj)
     elif email_obj.provider == 'microsoft':
