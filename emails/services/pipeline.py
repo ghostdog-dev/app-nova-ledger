@@ -43,16 +43,18 @@ logger = logging.getLogger(__name__)
 # CONSTANTS
 # ============================================================
 
-TRIAGE_BATCH_SIZE = 40
-TRIAGE_MAX_CONCURRENT = 3
+TRIAGE_BATCH_SIZE = settings.AI_TRIAGE_BATCH_SIZE
+TRIAGE_MAX_CONCURRENT = settings.AI_TRIAGE_MAX_CONCURRENT
 
-EXTRACTION_BATCH_SIZE = 15
-EXTRACTION_MAX_CONCURRENT = 2
+EXTRACTION_BATCH_SIZE = settings.AI_EXTRACTION_BATCH_SIZE
+EXTRACTION_MAX_CONCURRENT = settings.AI_EXTRACTION_MAX_CONCURRENT
 
-MAX_RETRIES = 3
-RETRY_BASE_DELAY = 2  # seconds
+MAX_RETRIES = settings.AI_MAX_RETRIES
+RETRY_BASE_DELAY = settings.AI_RETRY_BASE_DELAY
 
-MODEL = "claude-haiku-4-5-20251001"
+MODEL_TRIAGE = settings.AI_MODEL_TRIAGE
+MODEL_EXTRACTION = settings.AI_MODEL_EXTRACTION
+MODEL_CORRELATION = settings.AI_MODEL_CORRELATION
 
 
 # ============================================================
@@ -75,13 +77,13 @@ TRIAGE_WORKER_PROMPT = (
 TRIAGE_VERIFIER_PROMPT = (
     "Review these triage decisions. ONLY correct CLEAR errors.\n\n"
     "SHOULD be transactional (true):\n"
-    "- Order cancellation/annulation from a store (money was involved)\n"
+    "- Order cancellation from a store (money was involved)\n"
     "- Failed payment notifications (a real charge was attempted)\n"
     "- Receipts, invoices, shipping confirmations\n\n"
     "SHOULD NOT be transactional (false) — DO NOT flip these to true:\n"
     "- Security alerts, new sign-in notifications, verification codes\n"
     "- Welcome emails, account creation, email verification\n"
-    "- Marketplace messages (leboncoin, etc.) that are just conversations\n"
+    "- Marketplace messages that are just conversations (no money exchanged)\n"
     "- Azure/AWS/cloud account setup notifications\n"
     "- SSH key, password reset, 2FA notifications\n"
     "- Any email where NO money was charged or goods shipped\n\n"
@@ -97,31 +99,39 @@ TRIAGE_VERIFIER_PROMPT = (
 # --- Pass 2: Extraction ---
 
 EXTRACTION_SYSTEM_PROMPT = (
-    "You are a financial data extractor for an accounting tool. For each email, extract ALL available data.\n\n"
-    "REQUIRED fields: vendor_name, amount (TTC), currency, transaction_date (YYYY-MM-DD), "
-    "type (invoice/receipt/order/payment/shipping/refund/cancellation/subscription/other), description.\n\n"
-    "EXTRACT EVERYTHING available:\n"
-    "- invoice_number, order_number, payment_reference (transaction ID from payment processor)\n"
-    "- payment_method (CB, Mastercard, Visa, PayPal, virement, Link, Apple Pay, etc.)\n"
-    "- amount_tax_excl (HT), tax_amount (TVA), tax_rate (e.g. 20.0 for 20%)\n"
-    "- items: list of {name, quantity, unit_price} -- WHAT was purchased\n\n"
-    "ALWAYS use get_email_body for orders, receipts, and invoices to extract items, "
-    "payment details, and tax breakdown.\n"
-    "Extract ALL available data. For line items, extract name, quantity, unit_price.\n\n"
-    "Failed payments: keep as type='payment', add 'FAILED' or 'UNSUCCESSFUL' in description.\n\n"
-    "RULES:\n"
-    "- If the snippet is empty or missing amounts: use get_email_body\n"
+    "<role>You are a financial data extractor for an accounting tool.</role>\n\n"
+    "<instructions>\n"
+    "For each email, extract ALL available structured data.\n\n"
+    "Required: vendor_name, amount (total including tax), currency (ISO 4217), "
+    "transaction_date (YYYY-MM-DD), type, description.\n\n"
+    "Optional (extract if available):\n"
+    "- invoice_number, order_number, payment_reference\n"
+    "- payment_method (debit card, Mastercard, Visa, PayPal, bank transfer, Apple Pay, etc.)\n"
+    "- amount_tax_excl (amount excluding tax), tax_amount, tax_rate (percentage, e.g. 20.0)\n"
+    "- items: list of {name, quantity, unit_price}\n\n"
+    "Computations (only when you have real numbers):\n"
+    "- If total + tax_amount known: amount_tax_excl = total - tax_amount\n"
+    "- If total + tax_rate known: tax_amount = total * rate / (100 + rate)\n"
+    "- Round to 2 decimal places. NEVER guess tax rates.\n"
+    "</instructions>\n\n"
+    "<rules>\n"
+    "- For orders, receipts, invoices: ALWAYS use get_email_body to get items and tax details\n"
+    "- If snippet is empty: use get_email_body\n"
+    "- Before saving, use the think tool to verify your extraction\n"
+    "- Failed payments: type='payment', add 'FAILED' in description\n"
+    "- NEVER invent data — if not found, leave null and set status='partial'\n"
+    "- Currency: extract from email content. If not found, leave empty.\n"
     "- Set status='complete' if you have vendor + amount + date, otherwise 'partial'\n"
     "- confidence: 0.0-1.0 for how sure you are this is a real transaction\n"
-    "- NEVER invent data. No amount found = null + status='partial'\n"
     "- Save with save_transactions, then mark ALL emails as processed\n"
-    "- Process every email in the batch"
+    "- Process every email in the batch\n"
+    "</rules>"
 )
 
 EXTRACTION_VERIFIER_PROMPT = (
     "Today's date: {today}. Review these extracted transactions. Flag ONLY real issues:\n\n"
     "CHECK:\n"
-    "- Amount negative or unreasonably large (>100,000)? → correct to null\n"
+    "- Amount negative or unreasonably large for the context? → correct to null\n"
     "- Items unit_prices don't add up to total amount? → flag\n"
     "- Type doesn't match description (e.g. type='order' but description says 'cancellation')? → correct type\n"
     "- Missing amount but description contains a clear amount? → extract it\n\n"
@@ -149,13 +159,13 @@ CORRELATION_PROMPT_TEMPLATE = (
     "- Shipping email (no amount) + order email (has amount) from same vendor within 3 days -> MERGE\n"
     "- A 'subscription' with no amount on the same date as a 'payment' with an amount -> MERGE\n"
     "- A 'cancellation' with no amount is NOT a transaction -- mark for deletion (delete_id, keep_id=null)\n\n"
-    "CARRIER EMAILS (DHL, FedEx, UPS, Colissimo, La Poste):\n"
+    "SHIPPING/DELIVERY CARRIERS:\n"
     "- Shipping carriers are NOT the vendor. The real vendor is whoever sold the item.\n"
     "- If a carrier shipping email has the same order/tracking number as another vendor's order → MERGE into the vendor's transaction\n\n"
     "DO NOT MERGE:\n"
     "- Different order numbers = different purchases, PERIOD\n"
     "- Different amounts on different dates = different charges\n"
-    "- A payment of 108EUR and a payment of 216EUR = distinct, even from the same vendor\n\n"
+    "- Two payments of different amounts = distinct, even from the same vendor\n\n"
     "Return a JSON array:\n"
     '[{{"keep_id": <id_to_keep>, "delete_id": <id_to_remove>, "reason": "explanation"}}]\n'
     "To delete a non-transaction (e.g. cancellation notification with no amount):\n"
@@ -183,11 +193,27 @@ CORRELATION_VERIFIER_PROMPT = (
 
 EXTRACTION_TOOLS = [
     {
+        "name": "think",
+        "description": (
+            "Use this to reason about an email before extracting data. Think about: "
+            "what type of transaction is this? Do I need the full body? Have I extracted "
+            "all available fields? Is this a duplicate of an existing transaction?"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "thought": {"type": "string", "description": "Your reasoning"},
+            },
+            "required": ["thought"],
+        },
+    },
+    {
         "name": "get_email_body",
         "description": (
-            "Fetch the full body (text content) of a specific email from the provider API. "
-            "Use this when the snippet alone doesn't contain enough info (e.g., missing amount, invoice number). "
-            "Returns the plain text body of the email."
+            "Fetch the full text content of an email from the provider API (Gmail or Microsoft). "
+            "This makes a live API call — only use when the snippet doesn't contain enough data "
+            "(missing amount, invoice number, or line items). Returns plain text, max ~4000 chars. "
+            "Always fetch body for orders, receipts, and invoices to get complete item lists and tax details."
         ),
         "input_schema": {
             "type": "object",
@@ -198,14 +224,17 @@ EXTRACTION_TOOLS = [
                 },
             },
             "required": ["email_id"],
-                    },
-            },
+        },
+    },
     {
         "name": "save_transactions",
         "description": (
-            "Save one or more extracted transactions to the database. "
-            "Use structured data with all fields you could extract. "
-            "Set status to 'complete' if you have vendor + amount + date, otherwise 'partial'."
+            "Save one or more extracted financial transactions. Call once per batch with all transactions. "
+            "Valid types: invoice, receipt, order, payment, shipping, refund, cancellation, subscription, other. "
+            "Set status='complete' when you have vendor + amount + date. "
+            "Set status='partial' when any key field is missing. "
+            "Confidence: 0.9+ only when all fields clearly extracted from email. "
+            "For failed payments, use type='payment' and include 'FAILED' in description."
         ),
         "input_schema": {
             "type": "object",
@@ -230,11 +259,11 @@ EXTRACTION_TOOLS = [
                             "vendor_name": {"type": "string"},
                             "amount": {
                                 "type": "number",
-                                "description": "Transaction amount (TTC). Null if unknown.",
+                                "description": "Transaction amount (total including tax). Null if unknown.",
                             },
                             "currency": {
                                 "type": "string",
-                                "description": "ISO 4217 currency code (EUR, USD, GBP...). Default: EUR.",
+                                "description": "ISO 4217 currency code (EUR, USD, GBP...). Extract from email content.",
                             },
                             "transaction_date": {
                                 "type": "string",
@@ -257,11 +286,11 @@ EXTRACTION_TOOLS = [
                             },
                             "amount_tax_excl": {
                                 "type": "number",
-                                "description": "Amount excluding tax (HT). Null if unknown.",
+                                "description": "Amount excluding tax. Null if unknown.",
                             },
                             "tax_amount": {
                                 "type": "number",
-                                "description": "Tax amount (TVA). Null if unknown.",
+                                "description": "Tax amount. Null if unknown.",
                             },
                             "tax_rate": {
                                 "type": "number",
@@ -269,7 +298,7 @@ EXTRACTION_TOOLS = [
                             },
                             "payment_method": {
                                 "type": "string",
-                                "description": "Payment method: CB, Mastercard, Visa, PayPal, virement, Link, Apple Pay, etc.",
+                                "description": "Payment method: debit card, Mastercard, Visa, PayPal, bank transfer, Apple Pay, etc.",
                             },
                             "payment_reference": {
                                 "type": "string",
@@ -321,7 +350,14 @@ EXTRACTION_TOOLS = [
             },
 ]
 
+def _execute_think(user, params):
+    """Handle the think tool — just log the thought and return ok."""
+    logger.info(f'[Think] {params.get("thought", "")[:300]}')
+    return {"ok": True}
+
+
 EXTRACTION_TOOL_HANDLERS = {
+    'think': _execute_think,
     'get_email_body': _execute_get_email_body,
     'save_transactions': _execute_save_transactions,
     'mark_emails_processed': _execute_mark_emails_processed,
@@ -408,7 +444,7 @@ def _get_response_text(response):
     return text
 
 
-def _verify(client, prompt, rate_limiter):
+def _verify(client, prompt, rate_limiter, model=None):
     """
     Run a verifier LLM call. Returns parsed JSON corrections or empty list.
     Verifier has fresh context — only sees the output to verify.
@@ -416,10 +452,12 @@ def _verify(client, prompt, rate_limiter):
     if rate_limiter:
         rate_limiter.wait_if_needed()
 
+    verify_model = model or MODEL_TRIAGE
+
     try:
         response = _call_api_with_retry(
             client,
-            model=MODEL,
+            model=verify_model,
             max_tokens=2048,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -467,7 +505,7 @@ def _triage_single_batch(client, emails_data, rate_limiter):
 
     response = _call_api_with_retry(
         client,
-        model=MODEL,
+        model=MODEL_TRIAGE,
         max_tokens=2048,
         messages=[{"role": "user", "content": user_msg}],
     )
@@ -706,7 +744,7 @@ def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limite
 
     response = _call_api_with_retry(
         client,
-        model=MODEL,
+        model=MODEL_EXTRACTION,
         max_tokens=4096,
         system=EXTRACTION_SYSTEM_PROMPT,
         tools=EXTRACTION_TOOLS,
@@ -745,6 +783,7 @@ def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limite
                 )
 
                 handler = EXTRACTION_TOOL_HANDLERS.get(tool_name)
+                is_error = False
                 if handler:
                     try:
                         result = handler(user, tool_input)
@@ -765,14 +804,19 @@ def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limite
                     except Exception as e:
                         logger.error(f'  [Extraction] TOOL ERROR: {tool_name}: {e}')
                         result = {"error": str(e)}
+                        is_error = True
                 else:
                     result = {"error": f"Unknown tool: {tool_name}"}
+                    is_error = True
 
-                tool_results.append({
+                tool_result_entry = {
                     "type": "tool_result",
                     "tool_use_id": block.id,
                     "content": json.dumps(result, default=str),
-                })
+                }
+                if is_error:
+                    tool_result_entry["is_error"] = True
+                tool_results.append(tool_result_entry)
 
         messages.append({"role": "assistant", "content": assistant_content})
         messages.append({"role": "user", "content": tool_results})
@@ -782,7 +826,7 @@ def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limite
 
         response = _call_api_with_retry(
             client,
-            model=MODEL,
+            model=MODEL_EXTRACTION,
             max_tokens=4096,
             system=EXTRACTION_SYSTEM_PROMPT,
             tools=EXTRACTION_TOOLS,
@@ -877,7 +921,7 @@ def _run_extraction_verifier(user, client, rate_limiter):
     )
 
     logger.info(f'[Extraction-Verify] Reviewing {len(tx_data)} extracted transactions')
-    corrections = _verify(client, prompt, rate_limiter)
+    corrections = _verify(client, prompt, rate_limiter, model=MODEL_EXTRACTION)
 
     if isinstance(corrections, list) and corrections:
         logger.info(f'[Extraction-Verify] Found {len(corrections)} corrections')
@@ -1121,7 +1165,7 @@ def _run_correlation_pass(user, api_key, rate_limiter):
         try:
             response = _call_api_with_retry(
                 client,
-                model=MODEL,
+                model=MODEL_CORRELATION,
                 max_tokens=2048,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -1160,7 +1204,7 @@ def _run_correlation_pass(user, api_key, rate_limiter):
             f'[Correlation-Verify] Reviewing {len(merge_instructions)} merge instructions '
             f'for vendor "{vendor_name}"'
         )
-        verifier_result = _verify(client, verifier_prompt, rate_limiter)
+        verifier_result = _verify(client, verifier_prompt, rate_limiter, model=MODEL_CORRELATION)
 
         # Apply verifier rejections
         rejected_pairs = set()
@@ -1313,7 +1357,7 @@ def _run_correlation_pass(user, api_key, rate_limiter):
 
         try:
             response = _call_api_with_retry(
-                client, model=MODEL, max_tokens=2048,
+                client, model=MODEL_CORRELATION, max_tokens=2048,
                 messages=[{"role": "user", "content": cross_prompt}],
             )
             if rate_limiter and hasattr(response, 'usage') and response.usage:
@@ -1359,9 +1403,9 @@ def _run_correlation_pass(user, api_key, rate_limiter):
 def _run_computation_pass(user):
     """
     Pass 4: Pure Python -- compute derivable tax fields. No LLM.
-    - If TTC + TVA known -> HT = TTC - TVA
-    - If TTC + tax_rate known -> TVA = TTC * rate / (100 + rate), HT = TTC - TVA
-    - If HT + TVA known -> TTC = HT + TVA
+    - If total + tax_amount known -> amount_tax_excl = total - tax_amount
+    - If total + tax_rate known -> tax_amount = total * rate / (100 + rate), amount_tax_excl = total - tax_amount
+    - If amount_tax_excl + tax_amount known -> total = amount_tax_excl + tax_amount
     - Round to 2 decimals
     """
     logger.info('[Computation] === PASS 4 START ===')
@@ -1370,19 +1414,19 @@ def _run_computation_pass(user):
     for tx in Transaction.objects.filter(user=user):
         changed = False
 
-        # TTC + TVA known -> HT = TTC - TVA
+        # total + tax_amount known -> amount_tax_excl = total - tax_amount
         if tx.amount and tx.tax_amount and not tx.amount_tax_excl:
             tx.amount_tax_excl = (tx.amount - tx.tax_amount).quantize(Decimal('0.01'))
             changed = True
 
-        # TTC + tax_rate known -> TVA and HT
+        # total + tax_rate known -> tax_amount and amount_tax_excl
         if tx.amount and tx.tax_rate and not tx.tax_amount:
             rate = tx.tax_rate / Decimal('100')
             tx.tax_amount = (tx.amount * rate / (1 + rate)).quantize(Decimal('0.01'))
             tx.amount_tax_excl = (tx.amount - tx.tax_amount).quantize(Decimal('0.01'))
             changed = True
 
-        # HT + TVA known -> TTC = HT + TVA
+        # amount_tax_excl + tax_amount known -> total = amount_tax_excl + tax_amount
         if tx.amount_tax_excl and tx.tax_amount and not tx.amount:
             tx.amount = (tx.amount_tax_excl + tx.tax_amount).quantize(Decimal('0.01'))
             changed = True

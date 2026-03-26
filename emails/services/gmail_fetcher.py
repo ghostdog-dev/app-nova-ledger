@@ -12,7 +12,7 @@ from emails.services.token_refresh import get_valid_token
 logger = logging.getLogger(__name__)
 
 GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me'
-GMAIL_EXCLUDE_QUERY = '-category:promotions -category:social -category:forums -in:spam'
+GMAIL_EXCLUDE_QUERY = '-in:spam'  # Only exclude spam — AI triage handles the rest
 BATCH_SIZE = 100  # Gmail API max per page
 
 

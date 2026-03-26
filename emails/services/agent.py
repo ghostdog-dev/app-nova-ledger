@@ -13,16 +13,15 @@ from django.utils import timezone
 
 from emails.models import Email, Transaction
 from emails.services.merge import merge_related_transactions
-from emails.services.prefilter import prefilter_emails
 from emails.services.token_refresh import get_valid_token
 
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 25  # Emails per LLM batch (increased — most batches are all-ignored)
-MAX_RETRIES = 3
-RETRY_BASE_DELAY = 2  # seconds
-MAX_CONCURRENT_BATCHES = 3  # Max parallel batch threads
-RATE_LIMIT_INPUT_TOKENS = 40_000  # Conservative limit (actual is 50k/min)
+MAX_RETRIES = settings.AI_MAX_RETRIES
+RETRY_BASE_DELAY = settings.AI_RETRY_BASE_DELAY
+MAX_CONCURRENT_BATCHES = settings.AI_TRIAGE_MAX_CONCURRENT
+RATE_LIMIT_INPUT_TOKENS = settings.AI_RATE_LIMIT_TOKENS_PER_MIN
 
 # --- Tool definitions for Claude ---
 
@@ -55,9 +54,10 @@ TOOLS = [
     {
         "name": "get_email_body",
         "description": (
-            "Fetch the full body (text content) of a specific email from the provider API. "
-            "Use this when the snippet alone doesn't contain enough info (e.g., missing amount, invoice number). "
-            "Returns the plain text body of the email."
+            "Fetch the full text content of an email from the provider API (Gmail or Microsoft). "
+            "This makes a live API call — only use when the snippet doesn't contain enough data "
+            "(missing amount, invoice number, or line items). Returns plain text, max ~4000 chars. "
+            "Always fetch body for orders, receipts, and invoices to get complete item lists and tax details."
         ),
         "input_schema": {
             "type": "object",
@@ -73,9 +73,12 @@ TOOLS = [
     {
         "name": "save_transactions",
         "description": (
-            "Save one or more extracted transactions to the database. "
-            "Use structured data with all fields you could extract. "
-            "Set status to 'complete' if you have vendor + amount + date, otherwise 'partial'."
+            "Save one or more extracted financial transactions. Call once per batch with all transactions. "
+            "Valid types: invoice, receipt, order, payment, shipping, refund, cancellation, subscription, other. "
+            "Set status='complete' when you have vendor + amount + date. "
+            "Set status='partial' when any key field is missing. "
+            "Confidence: 0.9+ only when all fields clearly extracted from email. "
+            "For failed payments, use type='payment' and include 'FAILED' in description."
         ),
         "input_schema": {
             "type": "object",
@@ -101,7 +104,7 @@ TOOLS = [
                             },
                             "currency": {
                                 "type": "string",
-                                "description": "ISO 4217 currency code (EUR, USD, GBP...). Default: EUR.",
+                                "description": "ISO 4217 currency code (EUR, USD, GBP...). Extract from email content.",
                             },
                             "transaction_date": {
                                 "type": "string",
@@ -215,23 +218,24 @@ SYSTEM_PROMPT = """You classify emails as transactional or not, and extract tran
 
 CORE RULE — ONE TRANSACTION PER PURCHASE:
 - ALWAYS search_transactions by vendor/order/invoice BEFORE saving. If a match exists, save with the same order_number so it gets merged — do NOT create a new transaction.
-- A shipping email for a SHEIN order? Search for the existing SHEIN order and mark the shipping email as processed. Do NOT create a separate shipping transaction.
+- A shipping email for an existing order? Search for the existing order and mark the shipping email as processed. Do NOT create a separate shipping transaction.
 - A receipt and a payment notification for the same amount, same vendor, same date = SAME transaction. Save only once.
-- Carrier emails (DHL/FedEx/UPS) — the vendor is whoever shipped the package, not the carrier. Search by order/tracking number to find the real vendor's transaction.
+- Carrier emails (DHL/FedEx/UPS, etc.) — the vendor is whoever shipped the package, not the carrier. Search by order/tracking number to find the real vendor's transaction.
 
 WHAT TO IGNORE (mark as 'ignored'):
 - Newsletters, marketing, promotions, security alerts, verification codes, conversations
 - Subscription welcome emails with no amount — NOT transactions
 
 DATA EXTRACTION:
-- Extract: vendor_name, amount, currency (€=EUR, $=USD, £=GBP), transaction_date (YYYY-MM-DD), invoice_number, order_number, type, description
+- Extract: vendor_name, amount, currency (ISO 4217 code), transaction_date (YYYY-MM-DD), invoice_number, order_number, type, description
+- Currency: extract from email content. If not found, leave empty.
 - status='complete' if vendor + amount + date are known, otherwise 'partial'
 - confidence: 0.0-1.0 for how sure you are it's a real transaction
 - NEVER invent data. No amount found = null + status='partial'
 - Prefer transaction date from email content over email send date
 
 EMPTY SNIPPETS:
-- If snippet is empty/blank but subject suggests a transaction (order, shipped, facture, annulation, etc.), ALWAYS use get_email_body first
+- If snippet is empty/blank but subject suggests a transaction (order, shipped, etc.), ALWAYS use get_email_body first
 
 EFFICIENCY:
 - Process ALL emails in the batch. Group ignored emails in a single mark_emails_processed call."""
@@ -294,7 +298,7 @@ def _fetch_gmail_body(email_obj):
     # Try text/plain first, fallback to text/html
     text = find_part(payload, 'text/plain')
     if text and text.strip():
-        return text[:3000]
+        return text[:settings.AI_EMAIL_BODY_MAX_CHARS]
 
     # Fallback: extract text from HTML
     html = find_part(payload, 'text/html')
@@ -304,7 +308,7 @@ def _fetch_gmail_body(email_obj):
         html = re.sub(r'<(style|script)[^>]*>.*?</\1>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<[^>]+>', ' ', html)
         text = re.sub(r'\s+', ' ', text).strip()
-        return text[:3000]
+        return text[:settings.AI_EMAIL_BODY_MAX_CHARS]
 
     return "No text content found in email."
 
@@ -427,7 +431,7 @@ def _merge_transaction(existing, tx_data, email_obj, amount, tx_date):
     # Keep the most informative amount (prefer non-null)
     if amount is not None:
         existing.amount = amount
-    existing.currency = tx_data.get('currency') or existing.currency or 'EUR'
+    existing.currency = tx_data.get('currency') or existing.currency or ''
 
     # Keep the most informative date (prefer non-null)
     if tx_date:
@@ -544,7 +548,7 @@ def _execute_save_transactions(user, params):
                 type=tx_data.get('type', 'other'),
                 vendor_name=tx_data.get('vendor_name', 'Unknown'),
                 amount=amount,
-                currency=tx_data.get('currency', 'EUR') or 'EUR',
+                currency=tx_data.get('currency', '') or '',
                 transaction_date=tx_date,
                 invoice_number=tx_data.get('invoice_number', '') or '',
                 order_number=tx_data.get('order_number', '') or '',
@@ -917,14 +921,7 @@ def classify_emails(user):
     if not api_key:
         return {"error": "ANTHROPIC_API_KEY not configured"}
 
-    # Run rule-based pre-filter to remove obvious non-transactional emails
-    prefilter_stats = prefilter_emails(user)
-    logger.info(
-        f'Pre-filter results: {prefilter_stats["auto_ignored"]} auto-ignored, '
-        f'{prefilter_stats["remaining_for_ai"]} remaining for AI'
-    )
-
-    # Check there are emails to process (after pre-filtering)
+    # Check there are emails to process
     new_emails = list(
         Email.objects.filter(user=user, status=Email.Status.NEW)
         .order_by('-date')
@@ -933,9 +930,8 @@ def classify_emails(user):
 
     if not new_emails:
         return {
-            "message": "No emails to process after pre-filtering",
+            "message": "No emails to process",
             "processed": 0,
-            "prefilter_auto_ignored": prefilter_stats["auto_ignored"],
         }
 
     stats = {
@@ -943,7 +939,6 @@ def classify_emails(user):
         "transactions_updated": 0,
         "emails_processed": 0,
         "emails_ignored": 0,
-        "prefilter_auto_ignored": prefilter_stats["auto_ignored"],
         "api_calls": 0,
         "batches": 0,
         "errors": 0,
