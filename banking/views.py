@@ -46,8 +46,9 @@ class BankConnectView(APIView):
 
             # 3. Build webview URL
             webview_url = (
-                f'https://{settings.POWENS_DOMAIN}/2.0/webview/connect'
-                f'?client_id={settings.POWENS_CLIENT_ID}'
+                f'https://webview.powens.com/connect'
+                f'?domain={settings.POWENS_DOMAIN}'
+                f'&client_id={settings.POWENS_CLIENT_ID}'
                 f'&redirect_uri={settings.POWENS_REDIRECT_URI}'
                 f'&code={temp_code}'
             )

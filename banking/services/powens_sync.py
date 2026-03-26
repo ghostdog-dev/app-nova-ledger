@@ -91,8 +91,8 @@ def sync_bank_data(user, days=90):
                 'iban': acct_data.get('iban') or '',
                 'balance': Decimal(str(acct_data['balance'])) if acct_data.get('balance') is not None else None,
                 'currency': acct_data.get('currency', {}).get('id', 'EUR') if isinstance(acct_data.get('currency'), dict) else acct_data.get('currency', 'EUR'),
-                'account_type': acct_data.get('type', ''),
-                'disabled': acct_data.get('disabled', False),
+                'account_type': acct_data.get('type', {}).get('name', '') if isinstance(acct_data.get('type'), dict) else str(acct_data.get('type', '')),
+                'disabled': bool(acct_data.get('disabled')),
                 'last_update': timezone.now(),
             },
         )
