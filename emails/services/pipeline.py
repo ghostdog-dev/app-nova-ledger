@@ -1012,48 +1012,6 @@ def _run_extraction_pass(user, api_key, rate_limiter):
     """
     logger.info('[Extraction] === PASS 2 START ===')
 
-    triage_passed_emails = list(
-        Email.objects.filter(user=user, status=Email.Status.TRIAGE_PASSED)
-        .order_by('-date')
-        .values('id', 'from_address', 'from_name', 'subject', 'snippet', 'date',
-                'has_attachments', 'provider')
-    )
-
-    if not triage_passed_emails:
-        logger.info('[Extraction] No triage-passed emails to extract')
-        return {
-            'extraction_transactions_created': 0,
-            'extraction_transactions_updated': 0,
-            'extraction_emails_processed': 0,
-            'extraction_emails_ignored': 0,
-            'extraction_api_calls': 0,
-            'extraction_errors': 0,
-        }
-
-    # Prepare email data
-    emails_data_all = []
-    for e in triage_passed_emails:
-        emails_data_all.append({
-            'id': e['id'],
-            'from_address': e['from_address'],
-            'from_name': e['from_name'],
-            'subject': e['subject'],
-            'snippet': e['snippet'],
-            'date': e['date'].isoformat() if e['date'] else '',
-            'has_attachments': e['has_attachments'],
-        })
-
-    # Split into batches
-    all_batches = [
-        emails_data_all[i:i + EXTRACTION_BATCH_SIZE]
-        for i in range(0, len(emails_data_all), EXTRACTION_BATCH_SIZE)
-    ]
-    total_batches = len(all_batches)
-    logger.info(
-        f'[Extraction] {len(emails_data_all)} emails in {total_batches} batches '
-        f'(max {EXTRACTION_MAX_CONCURRENT} concurrent)'
-    )
-
     stats = {
         'extraction_transactions_created': 0,
         'extraction_transactions_updated': 0,
@@ -1062,36 +1020,85 @@ def _run_extraction_pass(user, api_key, rate_limiter):
         'extraction_api_calls': 0,
         'extraction_errors': 0,
     }
-    stats_lock = threading.Lock()
 
-    # --- Worker: parallel extraction batches ---
-    with ThreadPoolExecutor(max_workers=EXTRACTION_MAX_CONCURRENT) as executor:
-        futures = {}
-        for batch_idx, batch_data in enumerate(all_batches):
-            batch_num = batch_idx + 1
-            if batch_idx > 0:
-                time.sleep(1)
-            future = executor.submit(
-                _process_extraction_batch,
-                api_key, user, batch_data, batch_num, total_batches, rate_limiter,
-            )
-            futures[future] = batch_num
+    MAX_EXTRACTION_ROUNDS = 3
 
-        for future in as_completed(futures):
-            batch_num = futures[future]
-            try:
-                batch_stats = future.result()
-                with stats_lock:
-                    stats['extraction_transactions_created'] += batch_stats.get('transactions_created', 0)
-                    stats['extraction_transactions_updated'] += batch_stats.get('transactions_updated', 0)
-                    stats['extraction_emails_processed'] += batch_stats.get('emails_processed', 0)
-                    stats['extraction_emails_ignored'] += batch_stats.get('emails_ignored', 0)
-                    stats['extraction_api_calls'] += batch_stats.get('api_calls', 0)
-                    stats['extraction_errors'] += batch_stats.get('errors', 0)
-            except Exception as e:
-                logger.error(f'[Extraction] Batch {batch_num} raised unexpected exception: {e}')
-                with stats_lock:
-                    stats['extraction_errors'] += 1
+    for round_num in range(1, MAX_EXTRACTION_ROUNDS + 1):
+        triage_passed_emails = list(
+            Email.objects.filter(user=user, status=Email.Status.TRIAGE_PASSED)
+            .order_by('-date')
+            .values('id', 'from_address', 'from_name', 'subject', 'snippet', 'date',
+                    'has_attachments', 'provider')
+        )
+
+        if not triage_passed_emails:
+            if round_num == 1:
+                logger.info('[Extraction] No triage-passed emails to extract')
+            else:
+                logger.info(f'[Extraction] Round {round_num}: all emails processed')
+            break
+
+        logger.info(f'[Extraction] Round {round_num}/{MAX_EXTRACTION_ROUNDS}: {len(triage_passed_emails)} emails remaining')
+
+        # Prepare email data
+        emails_data_all = []
+        for e in triage_passed_emails:
+            emails_data_all.append({
+                'id': e['id'],
+                'from_address': e['from_address'],
+                'from_name': e['from_name'],
+                'subject': e['subject'],
+                'snippet': e['snippet'],
+                'date': e['date'].isoformat() if e['date'] else '',
+                'has_attachments': e['has_attachments'],
+            })
+
+        # Split into batches
+        all_batches = [
+            emails_data_all[i:i + EXTRACTION_BATCH_SIZE]
+            for i in range(0, len(emails_data_all), EXTRACTION_BATCH_SIZE)
+        ]
+        total_batches = len(all_batches)
+        logger.info(f'[Extraction] {total_batches} batches')
+
+        stats_lock = threading.Lock()
+        round_processed = 0
+
+        with ThreadPoolExecutor(max_workers=EXTRACTION_MAX_CONCURRENT) as executor:
+            futures = {}
+            for batch_idx, batch_data in enumerate(all_batches):
+                batch_num = batch_idx + 1
+                if batch_idx > 0:
+                    time.sleep(1)
+                future = executor.submit(
+                    _process_extraction_batch,
+                    api_key, user, batch_data, batch_num, total_batches, rate_limiter,
+                )
+                futures[future] = batch_num
+
+            for future in as_completed(futures):
+                batch_num = futures[future]
+                try:
+                    batch_stats = future.result()
+                    with stats_lock:
+                        stats['extraction_transactions_created'] += batch_stats.get('transactions_created', 0)
+                        stats['extraction_transactions_updated'] += batch_stats.get('transactions_updated', 0)
+                        stats['extraction_emails_processed'] += batch_stats.get('emails_processed', 0)
+                        stats['extraction_emails_ignored'] += batch_stats.get('emails_ignored', 0)
+                        stats['extraction_api_calls'] += batch_stats.get('api_calls', 0)
+                        stats['extraction_errors'] += batch_stats.get('errors', 0)
+                        round_processed += batch_stats.get('emails_processed', 0)
+                except Exception as e:
+                    logger.error(f'[Extraction] Batch {batch_num} raised unexpected exception: {e}')
+                    with stats_lock:
+                        stats['extraction_errors'] += 1
+
+        logger.info(f'[Extraction] Round {round_num} done: {round_processed} emails processed this round')
+
+        # If no progress this round, stop retrying
+        if round_processed == 0:
+            logger.warning(f'[Extraction] Round {round_num} made no progress — stopping retries')
+            break
 
     # --- Verifier: review extracted transactions ---
     client = anthropic.Anthropic(api_key=api_key)
