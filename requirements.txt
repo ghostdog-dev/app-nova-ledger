@@ -5,3 +5,4 @@ dj-rest-auth>=7.0
 djangorestframework-simplejwt>=5.4
 python-dotenv>=1.1
 anthropic>=0.52
+httpx>=0.28

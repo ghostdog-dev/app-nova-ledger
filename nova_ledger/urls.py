@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from accounts.views import callback_page, login_page, session_login_view
+from banking.views import BankCallbackView
 from emails.views import test_page as emails_test_page
 
 urlpatterns = [
@@ -10,6 +11,8 @@ urlpatterns = [
     path('api/auth/registration/', include('dj_rest_auth.registration.urls')),
     path('api/auth/', include('accounts.urls')),
     path('api/emails/', include('emails.urls')),
+    path('api/banking/', include('banking.urls')),
+    path('callback/powens/', BankCallbackView.as_view(), name='powens-callback'),
     path('login/', login_page, name='login_page'),
     path('callback/', callback_page, name='callback_page'),
     path('api/auth/session-login/', session_login_view, name='session_login'),

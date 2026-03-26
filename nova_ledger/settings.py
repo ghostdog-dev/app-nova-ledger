@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'dj_rest_auth.registration',
     'accounts',
     'emails',
+    'banking',
 ]
 
 SITE_ID = 1
@@ -109,6 +110,11 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'banking': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
 
@@ -158,6 +164,12 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 
 OAUTH_CALLBACK_URL = os.getenv('OAUTH_CALLBACK_URL', 'http://localhost:8000/callback/')
+
+# Powens Banking API
+POWENS_DOMAIN = os.getenv('POWENS_DOMAIN', '')  # e.g. nova-ledger-sandbox.biapi.pro
+POWENS_CLIENT_ID = os.getenv('POWENS_CLIENT_ID', '')
+POWENS_CLIENT_SECRET = os.getenv('POWENS_CLIENT_SECRET', '')
+POWENS_REDIRECT_URI = os.getenv('POWENS_REDIRECT_URI', 'http://localhost:8000/callback/powens/')
 
 # AI Pipeline Configuration
 AI_MODEL_TRIAGE = os.getenv('AI_MODEL_TRIAGE', 'claude-haiku-4-5-20251001')
