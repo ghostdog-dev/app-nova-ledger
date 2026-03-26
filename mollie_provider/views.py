@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import MollieInvoice, MolliePayment, MollieRefund, MollieSettlement
+from .models import MollieConnection, MollieInvoice, MolliePayment, MollieRefund, MollieSettlement
 from .serializers import (
     MollieInvoiceSerializer,
     MolliePaymentSerializer,
