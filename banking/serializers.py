@@ -39,7 +39,7 @@ class BankTransactionSerializer(serializers.ModelSerializer):
             if match.status == 'rejected':
                 return None
             etx = match.email_transaction
-            return {
+            result = {
                 'confidence': match.confidence,
                 'method': match.match_method,
                 'status': match.status,
@@ -52,6 +52,20 @@ class BankTransactionSerializer(serializers.ModelSerializer):
                 'payment_method': etx.payment_method,
                 'description': etx.description,
             }
+            # Include provider matches from the linked email transaction
+            try:
+                provider_matches = etx.provider_matches.all()
+                if provider_matches:
+                    result['provider_matches'] = [{
+                        'provider': pm.provider,
+                        'amount': str(pm.provider_amount),
+                        'currency': pm.provider_currency,
+                        'confidence': pm.confidence,
+                        'method': pm.match_method,
+                    } for pm in provider_matches]
+            except Exception:
+                pass
+            return result
         except Exception:
             return None
 

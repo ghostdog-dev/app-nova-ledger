@@ -198,6 +198,59 @@ def test_page(request):
             word-break: break-word;
         }
 
+        /* Match badges */
+        .badge-match {
+            display: inline-block; padding: 2px 8px; border-radius: 10px;
+            font-size: 10px; font-weight: 700; color: #fff; margin-left: 4px;
+            vertical-align: middle;
+        }
+        .badge-bank { background: #10b981; }
+        .badge-stripe { background: #635bff; }
+        .badge-paypal { background: #003087; }
+        .badge-mollie { background: #000; }
+
+        /* Match info sections in expanded details */
+        .match-section {
+            margin-top: 12px; padding: 10px 12px; border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+        .match-section-bank { background: #f0fdf4; border-color: #bbf7d0; }
+        .match-section-stripe { background: #f5f3ff; border-color: #c4b5fd; }
+        .match-section-paypal { background: #eff6ff; border-color: #bfdbfe; }
+        .match-section-mollie { background: #f9fafb; border-color: #d1d5db; }
+        .match-section-title {
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.5px; margin-bottom: 6px;
+        }
+        .match-section-bank .match-section-title { color: #059669; }
+        .match-section-stripe .match-section-title { color: #635bff; }
+        .match-section-paypal .match-section-title { color: #003087; }
+        .match-section-mollie .match-section-title { color: #000; }
+        .match-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 6px;
+        }
+        .match-field label { display: block; font-size: 9px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+        .match-field span { font-size: 12px; font-weight: 500; }
+
+        /* All Matches overview */
+        .matches-overview {
+            margin-top: 20px; padding: 16px; background: #fff;
+            border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .matches-overview h3 { font-size: 15px; margin-bottom: 12px; }
+        .matches-stats {
+            display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+        }
+        .matches-stat {
+            min-width: 130px; padding: 10px 14px; border-radius: 8px;
+            background: var(--bg);
+        }
+        .matches-stat .val { font-size: 20px; font-weight: 700; }
+        .matches-stat .lbl { font-size: 11px; color: var(--text-secondary); }
+        .quality-bar { display: flex; height: 24px; border-radius: 6px; overflow: hidden; margin-top: 8px; }
+        .quality-bar div { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #fff; }
+
         /* Emails table */
         .email-table-wrap { overflow-x: auto; }
         table.email-table { width: 100%; border-collapse: collapse; }
@@ -523,6 +576,21 @@ def test_page(request):
             var statusBadge = el('span', 'badge badge-' + t.status, t.status);
             header.appendChild(statusBadge);
 
+            /* Match badges */
+            if (t.matched_bank) {
+                header.appendChild(el('span', 'badge-match badge-bank', 'Bank'));
+            }
+            if (t.matched_providers && t.matched_providers.length > 0) {
+                var seen = {};
+                t.matched_providers.forEach(function(mp) {
+                    if (!seen[mp.provider]) {
+                        seen[mp.provider] = true;
+                        var provName = mp.provider.charAt(0).toUpperCase() + mp.provider.slice(1);
+                        header.appendChild(el('span', 'badge-match badge-' + mp.provider, provName));
+                    }
+                });
+            }
+
             /* Chevron SVG */
             var chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             chevron.setAttribute('class', 'tx-chevron');
@@ -646,7 +714,57 @@ def test_page(request):
             }
             details.appendChild(attachDiv);
 
-            /* Row 8: Raw data */
+            /* Row 8: Bank match details */
+            if (t.matched_bank) {
+                var bm = t.matched_bank;
+                var bankSec = el('div', 'match-section match-section-bank');
+                bankSec.appendChild(el('div', 'match-section-title', 'Bank Transaction Match'));
+                var bankGrid = el('div', 'match-grid');
+                var bankFields = [
+                    ['Bank Vendor', bm.bank_vendor || '-'],
+                    ['Bank Amount', bm.bank_amount || '-'],
+                    ['Bank Date', bm.bank_date || '-'],
+                    ['Confidence', Math.round((bm.confidence || 0) * 100) + '%'],
+                    ['Method', bm.method || '-'],
+                    ['Status', bm.status || '-'],
+                ];
+                bankFields.forEach(function(f) {
+                    var d = el('div', 'match-field');
+                    d.appendChild(el('label', null, f[0]));
+                    d.appendChild(el('span', null, f[1]));
+                    bankGrid.appendChild(d);
+                });
+                bankSec.appendChild(bankGrid);
+                details.appendChild(bankSec);
+            }
+
+            /* Row 9: Provider match details */
+            if (t.matched_providers && t.matched_providers.length > 0) {
+                t.matched_providers.forEach(function(mp) {
+                    var provClass = 'match-section match-section-' + mp.provider;
+                    var provSec = el('div', provClass);
+                    var provName = mp.provider.charAt(0).toUpperCase() + mp.provider.slice(1);
+                    provSec.appendChild(el('div', 'match-section-title', provName + ' Match'));
+                    var provGrid = el('div', 'match-grid');
+                    var provFields = [
+                        ['Amount', mp.amount + ' ' + (mp.currency || '')],
+                        ['Confidence', Math.round((mp.confidence || 0) * 100) + '%'],
+                        ['Method', mp.method || '-'],
+                        ['Status', mp.status || '-'],
+                        ['Transaction ID', mp.provider_transaction_id || '-'],
+                    ];
+                    provFields.forEach(function(f) {
+                        var d = el('div', 'match-field');
+                        d.appendChild(el('label', null, f[0]));
+                        d.appendChild(el('span', null, f[1]));
+                        provGrid.appendChild(d);
+                    });
+                    provSec.appendChild(provGrid);
+                    details.appendChild(provSec);
+                });
+            }
+
+            /* Row 10: Raw data */
             if (t.raw_data && Object.keys(t.raw_data).length > 0) {
                 var rawBtn = el('button', 'raw-toggle', 'Show raw data');
                 var rawWrap = el('div', 'raw-content');
@@ -798,6 +916,17 @@ def test_page(request):
                         conf.textContent = ' ' + Math.round(m.confidence * 100) + '%';
                         conf.style.cssText = 'font-size:11px;color:#6b7280;';
                         td6.appendChild(conf);
+                        // Show provider badges if the matched email also has provider matches
+                        if (m.provider_matches && m.provider_matches.length > 0) {
+                            m.provider_matches.forEach(function(pm) {
+                                var provColors = {stripe: '#635bff', paypal: '#003087', mollie: '#000'};
+                                var provBadge = document.createElement('span');
+                                var pName = pm.provider.charAt(0).toUpperCase() + pm.provider.slice(1);
+                                provBadge.textContent = pName;
+                                provBadge.style.cssText = 'background:' + (provColors[pm.provider] || '#6b7280') + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;margin-left:4px;';
+                                td6.appendChild(provBadge);
+                            });
+                        }
                     } else {
                         td6.textContent = '-';
                         td6.style.color = '#d1d5db';
@@ -826,6 +955,145 @@ def test_page(request):
             btn.disabled = false;
         });
 
+        /* --- Matches Overview (for Summary tab) --- */
+        async function buildMatchesOverview(container) {
+            var overview = document.createElement('div');
+            overview.className = 'matches-overview';
+            overview.appendChild(el('h3', null, 'Cross-Source Matching Overview'));
+
+            // Fetch all data in parallel
+            var emailTxs = [];
+            var bankTxs = [];
+            try {
+                var results = await Promise.all([
+                    fetch('/api/emails/transactions/').then(function(r) { return r.json(); }),
+                    fetch('/api/banking/transactions/').then(function(r) { return r.json(); }),
+                ]);
+                emailTxs = results[0].results || results[0];
+                bankTxs = results[1].results || results[1];
+            } catch(e) {}
+
+            var totalEmail = emailTxs.length;
+            var totalBank = bankTxs.length;
+
+            // Count email txs with bank matches
+            var emailWithBank = emailTxs.filter(function(t) { return t.matched_bank; }).length;
+            var emailWithProviders = emailTxs.filter(function(t) { return t.matched_providers && t.matched_providers.length > 0; }).length;
+            var emailUnmatched = emailTxs.filter(function(t) { return !t.matched_bank && (!t.matched_providers || t.matched_providers.length === 0); }).length;
+
+            // Count bank txs with email matches
+            var bankWithEmail = bankTxs.filter(function(t) { return t.matched_email; }).length;
+            var bankUnmatched = totalBank - bankWithEmail;
+
+            // Provider match breakdown
+            var providerCounts = {};
+            emailTxs.forEach(function(t) {
+                if (t.matched_providers) {
+                    t.matched_providers.forEach(function(mp) {
+                        providerCounts[mp.provider] = (providerCounts[mp.provider] || 0) + 1;
+                    });
+                }
+            });
+
+            // Confidence breakdown across all matches
+            var highConf = 0; var medConf = 0; var lowConf = 0;
+            emailTxs.forEach(function(t) {
+                if (t.matched_bank) {
+                    var c = t.matched_bank.confidence || 0;
+                    if (c >= 0.8) highConf++; else if (c >= 0.5) medConf++; else lowConf++;
+                }
+                if (t.matched_providers) {
+                    t.matched_providers.forEach(function(mp) {
+                        var c = mp.confidence || 0;
+                        if (c >= 0.8) highConf++; else if (c >= 0.5) medConf++; else lowConf++;
+                    });
+                }
+            });
+            var totalMatches = highConf + medConf + lowConf;
+
+            // Stats row
+            var statsRow = document.createElement('div');
+            statsRow.className = 'matches-stats';
+
+            var statItems = [
+                {val: totalEmail, lbl: 'Email Transactions', color: '#3b82f6'},
+                {val: totalBank, lbl: 'Bank Transactions', color: '#7c3aed'},
+                {val: emailWithBank, lbl: 'Email<>Bank Matches', color: '#10b981'},
+                {val: emailWithProviders, lbl: 'Email<>Provider Matches', color: '#635bff'},
+                {val: emailUnmatched, lbl: 'Unmatched Emails', color: emailUnmatched > 0 ? '#ef4444' : '#9ca3af'},
+                {val: bankUnmatched, lbl: 'Unmatched Bank Txs', color: bankUnmatched > 0 ? '#f59e0b' : '#9ca3af'},
+            ];
+
+            statItems.forEach(function(s) {
+                var box = document.createElement('div');
+                box.className = 'matches-stat';
+                var valEl = document.createElement('div');
+                valEl.className = 'val';
+                valEl.textContent = s.val;
+                valEl.style.color = s.color;
+                box.appendChild(valEl);
+                var lblEl = document.createElement('div');
+                lblEl.className = 'lbl';
+                lblEl.textContent = s.lbl;
+                box.appendChild(lblEl);
+                statsRow.appendChild(box);
+            });
+            overview.appendChild(statsRow);
+
+            // Provider breakdown
+            var provKeys = Object.keys(providerCounts);
+            if (provKeys.length > 0) {
+                var provRow = document.createElement('div');
+                provRow.style.cssText = 'margin-bottom:12px;';
+                provRow.appendChild(el('div', null, ''));
+                var provTitle = document.createElement('div');
+                provTitle.textContent = 'Provider Match Breakdown';
+                provTitle.style.cssText = 'font-size:12px;font-weight:600;margin-bottom:6px;color:#374151;';
+                provRow.appendChild(provTitle);
+                var provColors = {stripe: '#635bff', paypal: '#003087', mollie: '#000'};
+                provKeys.forEach(function(prov) {
+                    var chip = document.createElement('span');
+                    var pName = prov.charAt(0).toUpperCase() + prov.slice(1);
+                    chip.textContent = pName + ': ' + providerCounts[prov];
+                    chip.style.cssText = 'display:inline-block;background:' + (provColors[prov] || '#6b7280') + ';color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;margin-right:8px;';
+                    provRow.appendChild(chip);
+                });
+                overview.appendChild(provRow);
+            }
+
+            // Confidence quality bar
+            if (totalMatches > 0) {
+                var qualTitle = document.createElement('div');
+                qualTitle.textContent = 'Match Quality (' + totalMatches + ' total matches)';
+                qualTitle.style.cssText = 'font-size:12px;font-weight:600;margin-bottom:6px;color:#374151;';
+                overview.appendChild(qualTitle);
+
+                var bar = document.createElement('div');
+                bar.className = 'quality-bar';
+                if (highConf > 0) {
+                    var seg1 = document.createElement('div');
+                    seg1.style.cssText = 'background:#10b981;flex:' + highConf + ';';
+                    seg1.textContent = highConf + ' high';
+                    bar.appendChild(seg1);
+                }
+                if (medConf > 0) {
+                    var seg2 = document.createElement('div');
+                    seg2.style.cssText = 'background:#f59e0b;flex:' + medConf + ';color:#000;';
+                    seg2.textContent = medConf + ' medium';
+                    bar.appendChild(seg2);
+                }
+                if (lowConf > 0) {
+                    var seg3 = document.createElement('div');
+                    seg3.style.cssText = 'background:#ef4444;flex:' + lowConf + ';';
+                    seg3.textContent = lowConf + ' low';
+                    bar.appendChild(seg3);
+                }
+                overview.appendChild(bar);
+            }
+
+            container.appendChild(overview);
+        }
+
         /* --- Summary --- */
         async function loadSummary() {
             try {
@@ -834,8 +1102,14 @@ def test_page(request):
                 var container = document.getElementById('summary-content');
                 container.innerHTML = '';
 
+                // --- All Matches Overview ---
+                buildMatchesOverview(container);
+
                 if (!data.length) {
-                    container.textContent = 'No data. Enrich bank transactions first.';
+                    var noData = document.createElement('div');
+                    noData.textContent = 'No bank summary data. Enrich bank transactions first.';
+                    noData.style.cssText = 'text-align:center;color:#9ca3af;padding:20px;';
+                    container.appendChild(noData);
                     return;
                 }
 
@@ -1019,10 +1293,31 @@ def test_page(request):
             var container = document.getElementById('providers-content');
             container.innerHTML = '';
 
+            // Build a reverse lookup: provider_transaction_id -> email transaction info
+            var providerMatchLookup = {};
+            try {
+                var txResp = await fetch('/api/emails/transactions/');
+                var txData = await txResp.json();
+                var txList = txData.results || txData;
+                txList.forEach(function(t) {
+                    if (t.matched_providers && t.matched_providers.length > 0) {
+                        t.matched_providers.forEach(function(mp) {
+                            providerMatchLookup[mp.provider_transaction_id] = {
+                                vendor_name: t.vendor_name,
+                                amount: t.amount,
+                                currency: t.currency,
+                                confidence: mp.confidence,
+                                method: mp.method,
+                            };
+                        });
+                    }
+                });
+            } catch(e) { /* no email txs available */ }
+
             var providers = [
-                {name: 'Stripe', endpoint: '/api/stripe/balance-transactions/', color: '#635bff'},
-                {name: 'PayPal', endpoint: '/api/paypal/transactions/', color: '#003087'},
-                {name: 'Mollie', endpoint: '/api/mollie/payments/', color: '#000'},
+                {name: 'Stripe', key: 'stripe', endpoint: '/api/stripe/balance-transactions/', color: '#635bff', idField: 'stripe_id'},
+                {name: 'PayPal', key: 'paypal', endpoint: '/api/paypal/transactions/', color: '#003087', idField: 'paypal_id'},
+                {name: 'Mollie', key: 'mollie', endpoint: '/api/mollie/payments/', color: '#000', idField: 'mollie_id'},
             ];
 
             for (var p of providers) {
@@ -1031,12 +1326,21 @@ def test_page(request):
                     var data = await resp.json();
                     if (!data.length) continue;
 
+                    var matchedCount = 0;
+                    data.forEach(function(t) {
+                        if (providerMatchLookup[t[p.idField]]) matchedCount++;
+                    });
+
                     var section = document.createElement('div');
                     section.style.cssText = 'margin-bottom:20px;';
 
                     var title = document.createElement('h3');
-                    title.textContent = p.name + ' (' + data.length + ' transactions)';
                     title.style.cssText = 'font-size:14px;margin-bottom:8px;color:' + p.color + ';';
+                    title.textContent = p.name + ' (' + data.length + ' transactions';
+                    if (matchedCount > 0) {
+                        title.textContent += ', ' + matchedCount + ' matched to emails';
+                    }
+                    title.textContent += ')';
                     section.appendChild(title);
 
                     var table = document.createElement('table');
@@ -1045,7 +1349,7 @@ def test_page(request):
 
                     var thead = document.createElement('thead');
                     var headerRow = document.createElement('tr');
-                    ['Date', 'Description', 'Amount', 'Status', 'Type'].forEach(function(h) {
+                    ['Date', 'Description', 'Amount', 'Status', 'Type', 'Email Match'].forEach(function(h) {
                         var th = document.createElement('th');
                         th.textContent = h;
                         headerRow.appendChild(th);
@@ -1062,10 +1366,10 @@ def test_page(request):
                         var desc = t.description || t.statement_descriptor || t.note || '-';
                         var amount = t.amount_decimal || t.amount || '?';
                         var currency = t.currency || '';
-                        var status = t.status || '-';
+                        var provStatus = t.status || '-';
                         var type = t.type || t.transaction_type || t.event_code || t.method || '-';
 
-                        [date, desc, amount + ' ' + currency, status, type].forEach(function(v, i) {
+                        [date, desc, amount + ' ' + currency, provStatus, type].forEach(function(v, i) {
                             var td = document.createElement('td');
                             td.textContent = v;
                             if (i === 2) {
@@ -1074,6 +1378,30 @@ def test_page(request):
                             }
                             tr.appendChild(td);
                         });
+
+                        // Email Match column
+                        var tdMatch = document.createElement('td');
+                        var provId = t[p.idField];
+                        var emailMatch = provId ? providerMatchLookup[provId] : null;
+                        if (emailMatch) {
+                            var eBadge = document.createElement('span');
+                            eBadge.textContent = emailMatch.vendor_name;
+                            eBadge.style.cssText = 'background:#10b981;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;';
+                            tdMatch.appendChild(eBadge);
+                            var eAmount = document.createElement('span');
+                            eAmount.textContent = ' ' + emailMatch.amount + ' ' + emailMatch.currency;
+                            eAmount.style.cssText = 'font-size:11px;color:#6b7280;margin-left:4px;';
+                            tdMatch.appendChild(eAmount);
+                            var eConf = document.createElement('span');
+                            eConf.textContent = ' ' + Math.round((emailMatch.confidence || 0) * 100) + '%';
+                            eConf.style.cssText = 'font-size:10px;color:#9ca3af;';
+                            tdMatch.appendChild(eConf);
+                        } else {
+                            tdMatch.textContent = '-';
+                            tdMatch.style.color = '#d1d5db';
+                        }
+                        tr.appendChild(tdMatch);
+
                         tbody.appendChild(tr);
                     });
                     table.appendChild(tbody);
