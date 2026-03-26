@@ -13,12 +13,6 @@ class PayPalConnectionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class PayPalConnectInputSerializer(serializers.Serializer):
-    client_id = serializers.CharField(max_length=255)
-    client_secret = serializers.CharField()
-    is_sandbox = serializers.BooleanField(default=True)
-
-
 class PayPalTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = PayPalTransaction

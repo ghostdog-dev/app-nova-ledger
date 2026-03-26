@@ -44,9 +44,9 @@ def _paginate(list_method, **params):
     return all_items
 
 
-def sync_balance_transactions(user, connection, api_key):
+def sync_balance_transactions(user, connection, access_token):
     """Fetch and store Stripe balance transactions."""
-    items = _paginate(stripe.BalanceTransaction.list, api_key=api_key, limit=100)
+    items = _paginate(stripe.BalanceTransaction.list, api_key=access_token, limit=100)
     created = 0
 
     for item in items:
@@ -77,9 +77,9 @@ def sync_balance_transactions(user, connection, api_key):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_charges(user, connection, api_key):
+def sync_charges(user, connection, access_token):
     """Fetch and store Stripe charges."""
-    items = _paginate(stripe.Charge.list, api_key=api_key, limit=100)
+    items = _paginate(stripe.Charge.list, api_key=access_token, limit=100)
     created = 0
 
     for item in items:
@@ -125,9 +125,9 @@ def sync_charges(user, connection, api_key):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_payouts(user, connection, api_key):
+def sync_payouts(user, connection, access_token):
     """Fetch and store Stripe payouts."""
-    items = _paginate(stripe.Payout.list, api_key=api_key, limit=100)
+    items = _paginate(stripe.Payout.list, api_key=access_token, limit=100)
     created = 0
 
     for item in items:
@@ -157,9 +157,9 @@ def sync_payouts(user, connection, api_key):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_invoices(user, connection, api_key):
+def sync_invoices(user, connection, access_token):
     """Fetch and store Stripe invoices."""
-    items = _paginate(stripe.Invoice.list, api_key=api_key, limit=100)
+    items = _paginate(stripe.Invoice.list, api_key=access_token, limit=100)
     created = 0
 
     for item in items:
@@ -211,9 +211,9 @@ def sync_invoices(user, connection, api_key):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_subscriptions(user, connection, api_key):
+def sync_subscriptions(user, connection, access_token):
     """Fetch and store Stripe subscriptions."""
-    items = _paginate(stripe.Subscription.list, api_key=api_key, limit=100, status='all')
+    items = _paginate(stripe.Subscription.list, api_key=access_token, limit=100, status='all')
     created = 0
 
     for item in items:
@@ -268,9 +268,9 @@ def sync_subscriptions(user, connection, api_key):
     return {'fetched': len(items), 'created': created}
 
 
-def sync_disputes(user, connection, api_key):
+def sync_disputes(user, connection, access_token):
     """Fetch and store Stripe disputes."""
-    items = _paginate(stripe.Dispute.list, api_key=api_key, limit=100)
+    items = _paginate(stripe.Dispute.list, api_key=access_token, limit=100)
     created = 0
 
     for item in items:
@@ -306,8 +306,8 @@ def sync_stripe_data(user, days_back: int = 90):
     if not connection.is_active:
         raise ValueError('Stripe connection is inactive')
 
-    # Pass api_key per-request instead of setting stripe.api_key globally
-    api_key = connection.api_key
+    # Pass access_token per-request (Stripe SDK uses api_key= kwarg)
+    access_token = connection.access_token
 
     stats = {}
 
@@ -322,7 +322,7 @@ def sync_stripe_data(user, days_back: int = 90):
 
     for name, func in sync_funcs:
         try:
-            stats[name] = func(user, connection, api_key)
+            stats[name] = func(user, connection, access_token)
         except Exception:
             logger.exception('Failed to sync %s for user %s', name, user.email)
             stats[name] = {'error': f'Failed to sync {name}'}

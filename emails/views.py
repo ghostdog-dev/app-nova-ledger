@@ -894,76 +894,30 @@ def test_page(request):
             } catch(e) { console.error('Summary load error:', e); }
         }
 
-        /* --- Stripe Connect --- */
-        document.getElementById('btn-stripe-connect').addEventListener('click', async function() {
-            var key = prompt('Enter your Stripe Secret Key (sk_test_... or sk_live_...):');
-            if (!key) return;
-            this.disabled = true;
-            showStatus('Connecting Stripe...', true);
-            try {
-                var resp = await fetch('/api/stripe/connect/', {
-                    method: 'POST',
-                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
-                    body: JSON.stringify({api_key: key})
-                });
-                var data = await resp.json();
-                if (resp.ok) {
-                    showStatus('Stripe connected! Account: ' + (data.account_name || data.stripe_account_id || 'OK'));
-                    syncProvider('stripe');
-                } else {
-                    showStatus('Stripe error: ' + JSON.stringify(data));
-                }
-            } catch(e) { showStatus('Error: ' + e.message); }
-            this.disabled = false;
-        });
-
-        /* --- PayPal Connect --- */
-        document.getElementById('btn-paypal-connect').addEventListener('click', async function() {
-            var clientId = prompt('Enter your PayPal Client ID:');
-            if (!clientId) return;
-            var clientSecret = prompt('Enter your PayPal Client Secret:');
-            if (!clientSecret) return;
-            this.disabled = true;
-            showStatus('Connecting PayPal...', true);
-            try {
-                var resp = await fetch('/api/paypal/connect/', {
-                    method: 'POST',
-                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
-                    body: JSON.stringify({client_id: clientId, client_secret: clientSecret})
-                });
-                var data = await resp.json();
-                if (resp.ok) {
-                    showStatus('PayPal connected!');
-                    syncProvider('paypal');
-                } else {
-                    showStatus('PayPal error: ' + JSON.stringify(data));
-                }
-            } catch(e) { showStatus('Error: ' + e.message); }
-            this.disabled = false;
-        });
-
-        /* --- Mollie Connect --- */
-        document.getElementById('btn-mollie-connect').addEventListener('click', async function() {
-            var key = prompt('Enter your Mollie API Key (test_... or live_...):');
-            if (!key) return;
-            this.disabled = true;
-            showStatus('Connecting Mollie...', true);
-            try {
-                var resp = await fetch('/api/mollie/connect/', {
-                    method: 'POST',
-                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
-                    body: JSON.stringify({api_key: key})
-                });
-                var data = await resp.json();
-                if (resp.ok) {
-                    showStatus('Mollie connected! Organization: ' + (data.organization_name || 'OK'));
-                    syncProvider('mollie');
-                } else {
-                    showStatus('Mollie error: ' + JSON.stringify(data));
-                }
-            } catch(e) { showStatus('Error: ' + e.message); }
-            this.disabled = false;
-        });
+        /* --- OAuth Connect (Stripe, PayPal, Mollie) --- */
+        function oauthConnect(provider) {
+            return async function() {
+                this.disabled = true;
+                showStatus('Redirecting to ' + provider + '...', true);
+                try {
+                    var resp = await fetch('/api/' + provider + '/connect/', {
+                        method: 'POST',
+                        headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    });
+                    var data = await resp.json();
+                    var url = data.authorize_url || data.webview_url;
+                    if (url) {
+                        window.location.href = url;
+                    } else {
+                        showStatus(provider + ' error: ' + JSON.stringify(data));
+                    }
+                } catch(e) { showStatus('Error: ' + e.message); }
+                this.disabled = false;
+            };
+        }
+        document.getElementById('btn-stripe-connect').addEventListener('click', oauthConnect('stripe'));
+        document.getElementById('btn-paypal-connect').addEventListener('click', oauthConnect('paypal'));
+        document.getElementById('btn-mollie-connect').addEventListener('click', oauthConnect('mollie'));
 
         /* --- Generic Provider Sync --- */
         async function syncProvider(provider) {

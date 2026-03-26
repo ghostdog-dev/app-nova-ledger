@@ -4,8 +4,10 @@ from django.db import models
 
 class StripeConnection(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='stripe_connection')
-    stripe_account_id = models.CharField(max_length=255)
-    api_key = models.TextField()  # WARNING: Encrypt before production (use django-fernet-fields or similar)
+    stripe_account_id = models.CharField(max_length=255)  # acct_xxx
+    access_token = models.TextField()  # sk_xxx (OAuth token) — WARNING: encrypt before production
+    refresh_token = models.TextField(blank=True)
+    scope = models.CharField(max_length=50, blank=True)  # read_only or read_write
     account_name = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
     last_sync = models.DateTimeField(null=True, blank=True)

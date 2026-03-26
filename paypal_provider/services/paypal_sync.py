@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import httpx
+from django.conf import settings as django_settings
+from django.utils import timezone as tz
 
 from ..models import PayPalConnection, PayPalDispute, PayPalInvoice, PayPalTransaction
 
@@ -14,37 +16,49 @@ LIVE_BASE = 'https://api-m.paypal.com'
 
 
 class PayPalClient:
-    """PayPal REST API client using httpx."""
+    """PayPal REST API client using OAuth2 user tokens."""
 
     def __init__(self, connection: PayPalConnection):
         self.connection = connection
         self.base_url = SANDBOX_BASE if connection.is_sandbox else LIVE_BASE
-        self._access_token = None
 
-    def _get_access_token(self) -> str:
-        """Get OAuth2 access token using client credentials."""
-        if self._access_token:
-            return self._access_token
+    def _ensure_valid_token(self):
+        """Refresh the access token if expired or about to expire (60s buffer)."""
+        if (
+            self.connection.token_expires_at
+            and self.connection.token_expires_at > tz.now() + timedelta(seconds=60)
+        ):
+            return  # Token still valid
 
+        if not self.connection.refresh_token:
+            raise ValueError('PayPal token expired and no refresh token available. Please reconnect.')
+
+        logger.info('PayPal token expired for user %s, refreshing...', self.connection.user.email)
         resp = httpx.post(
             f'{self.base_url}/v1/oauth2/token',
-            auth=(self.connection.client_id, self.connection.client_secret),
-            data={'grant_type': 'client_credentials'},
+            auth=(django_settings.PAYPAL_CLIENT_ID, django_settings.PAYPAL_CLIENT_SECRET),
+            data={
+                'grant_type': 'refresh_token',
+                'refresh_token': self.connection.refresh_token,
+            },
             headers={'Accept': 'application/json'},
             timeout=30,
         )
         resp.raise_for_status()
-        self._access_token = resp.json()['access_token']
-        return self._access_token
+        token_data = resp.json()
 
-    def _force_refresh_token(self) -> str:
-        """Force a token refresh by clearing the cached token."""
-        self._access_token = None
-        return self._get_access_token()
+        self.connection.access_token = token_data['access_token']
+        if token_data.get('refresh_token'):
+            self.connection.refresh_token = token_data['refresh_token']
+        expires_in = token_data.get('expires_in', 28800)
+        self.connection.token_expires_at = tz.now() + timedelta(seconds=expires_in)
+        self.connection.save(update_fields=['access_token', 'refresh_token', 'token_expires_at'])
+        logger.info('PayPal token refreshed for user %s', self.connection.user.email)
 
     def _headers(self) -> dict:
+        self._ensure_valid_token()
         return {
-            'Authorization': f'Bearer {self._get_access_token()}',
+            'Authorization': f'Bearer {self.connection.access_token}',
             'Content-Type': 'application/json',
         }
 
@@ -53,22 +67,14 @@ class PayPalClient:
         kwargs.setdefault('headers', self._headers())
         resp = getattr(httpx, method)(url, **kwargs)
         if resp.status_code == 401:
-            logger.info('PayPal 401 received, refreshing access token and retrying')
-            self._force_refresh_token()
+            logger.info('PayPal 401 received, forcing token refresh and retrying')
+            # Force refresh by expiring the token
+            self.connection.token_expires_at = None
+            self._ensure_valid_token()
             kwargs['headers'] = self._headers()
             resp = getattr(httpx, method)(url, **kwargs)
         resp.raise_for_status()
         return resp
-
-    def verify_credentials(self) -> dict:
-        """Verify client_id/client_secret by fetching a token and user info."""
-        self._get_access_token()
-        resp = self._make_request(
-            'get',
-            f'{self.base_url}/v1/identity/oauth2/userinfo?schema=paypalv1.1',
-            timeout=30,
-        )
-        return resp.json()
 
     def fetch_transactions(self, start_date: datetime, end_date: datetime) -> list[dict]:
         """Fetch transactions from the reporting API. Handles pagination."""

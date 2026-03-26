@@ -1,6 +1,9 @@
 import logging
 
 import stripe as stripe_lib
+from django.conf import settings as django_settings
+from django.shortcuts import redirect
+from django.views import View
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -30,54 +33,67 @@ logger = logging.getLogger(__name__)
 
 
 class StripeConnectView(APIView):
-    """Connect a Stripe account by providing an API key."""
+    """Start Stripe Connect OAuth flow -- returns authorize URL."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        api_key = request.data.get('api_key', '').strip()
-        if not api_key:
-            return Response(
-                {'error': 'api_key is required'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        authorize_url = (
+            f'https://connect.stripe.com/oauth/authorize'
+            f'?response_type=code'
+            f'&client_id={django_settings.STRIPE_CLIENT_ID}'
+            f'&scope=read_only'
+            f'&redirect_uri={django_settings.STRIPE_CONNECT_REDIRECT_URI}'
+        )
+        return Response({'authorize_url': authorize_url})
 
-        # Verify the API key by retrieving the account
+
+class StripeCallbackView(View):
+    """Handle OAuth callback from Stripe Connect."""
+
+    def get(self, request):
+        code = request.GET.get('code')
+        error = request.GET.get('error')
+
+        if error:
+            return redirect(f'/emails/test/?stripe_error={error}')
+
+        if not code:
+            return redirect('/emails/test/?stripe_error=no_code')
+
+        if not request.user.is_authenticated:
+            return redirect('/login/?next=/emails/test/')
+
         try:
-            account = stripe_lib.Account.retrieve(api_key=api_key)
-        except stripe_lib.error.AuthenticationError:
-            return Response(
-                {'error': 'Invalid Stripe API key'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        except Exception:
-            logger.exception('Failed to verify Stripe API key')
-            return Response(
-                {'error': 'Failed to verify Stripe API key'},
-                status=status.HTTP_502_BAD_GATEWAY,
+            response = stripe_lib.OAuth.token(
+                grant_type='authorization_code',
+                code=code,
+                api_key=django_settings.STRIPE_SECRET_KEY,
             )
 
-        account_name = ''
-        if hasattr(account, 'settings') and account.settings:
-            dashboard = account.settings.get('dashboard', {})
-            account_name = dashboard.get('display_name', '') or ''
-        if not account_name and hasattr(account, 'business_profile') and account.business_profile:
-            account_name = account.business_profile.get('name', '') or ''
+            StripeConnection.objects.update_or_create(
+                user=request.user,
+                defaults={
+                    'stripe_account_id': response.get('stripe_user_id', ''),
+                    'access_token': response.get('access_token', ''),
+                    'refresh_token': response.get('refresh_token', ''),
+                    'scope': response.get('scope', ''),
+                    'is_active': True,
+                },
+            )
+            logger.info('Stripe connected for user %s (account %s)',
+                        request.user.email, response.get('stripe_user_id', ''))
 
-        connection, created = StripeConnection.objects.update_or_create(
-            user=request.user,
-            defaults={
-                'stripe_account_id': account.id,
-                'api_key': api_key,
-                'account_name': account_name,
-                'is_active': True,
-            },
-        )
+            # Auto-sync after connecting
+            try:
+                sync_stripe_data(request.user)
+            except Exception:
+                logger.exception('Auto-sync failed after Stripe connect for %s', request.user.email)
 
-        serializer = StripeConnectionSerializer(connection)
-        return Response(
-            serializer.data,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-        )
+            return redirect('/emails/test/?stripe_connected=true')
+
+        except Exception as e:
+            logger.exception('Stripe OAuth callback failed')
+            return redirect(f'/emails/test/?stripe_error={str(e)[:100]}')
 
 
 class StripeSyncView(APIView):
