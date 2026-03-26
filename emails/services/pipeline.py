@@ -123,7 +123,9 @@ EXTRACTION_SYSTEM_PROMPT = (
     "- Currency: extract from email content. If not found, leave empty.\n"
     "- Set status='complete' if you have vendor + amount + date, otherwise 'partial'\n"
     "- confidence: 0.0-1.0 for how sure you are this is a real transaction\n"
-    "- Save with save_transactions, then mark ALL emails as processed\n"
+    "- CRITICAL ORDER: You MUST call save_transactions FIRST, then mark_emails_processed AFTER.\n"
+    "  NEVER call mark_emails_processed before save_transactions. Save first, mark second.\n"
+    "- Call save_transactions with ALL transactions in one call, not one by one.\n"
     "- Process every email in the batch\n"
     "</rules>"
 )
@@ -356,11 +358,36 @@ def _execute_think(user, params):
     return {"ok": True}
 
 
+def _safe_mark_emails_processed(user, params):
+    """Wrapper: only mark as 'processed' if a transaction exists for the email.
+    Emails without transactions stay as 'triage_passed' for retry."""
+    email_ids = params.get('email_ids', [])
+    new_status = params.get('status', 'processed')
+
+    if new_status == 'processed':
+        marked_processed = 0
+        marked_retry = 0
+        for eid in email_ids:
+            has_tx = Transaction.objects.filter(user=user, email_id=eid).exists()
+            if has_tx:
+                Email.objects.filter(id=eid, user=user).update(status='processed')
+                marked_processed += 1
+            else:
+                # Don't mark as processed — keep for retry
+                Email.objects.filter(id=eid, user=user).update(status='triage_passed')
+                marked_retry += 1
+                logger.warning(f'[Safety] Email {eid} has no transaction — kept as triage_passed for retry')
+        return {"marked": marked_processed, "retry": marked_retry, "status": new_status}
+    else:
+        # For 'ignored' status, just pass through
+        return _execute_mark_emails_processed(user, params)
+
+
 EXTRACTION_TOOL_HANDLERS = {
     'think': _execute_think,
     'get_email_body': _execute_get_email_body,
     'save_transactions': _execute_save_transactions,
-    'mark_emails_processed': _execute_mark_emails_processed,
+    'mark_emails_processed': _safe_mark_emails_processed,
 }
 
 
@@ -745,7 +772,7 @@ def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limite
     response = _call_api_with_retry(
         client,
         model=MODEL_EXTRACTION,
-        max_tokens=4096,
+        max_tokens=8192,
         system=EXTRACTION_SYSTEM_PROMPT,
         tools=EXTRACTION_TOOLS,
         messages=messages,
@@ -827,7 +854,7 @@ def _extraction_single_batch(client, user, emails_data, batch_stats, rate_limite
         response = _call_api_with_retry(
             client,
             model=MODEL_EXTRACTION,
-            max_tokens=4096,
+            max_tokens=8192,
             system=EXTRACTION_SYSTEM_PROMPT,
             tools=EXTRACTION_TOOLS,
             messages=messages,
