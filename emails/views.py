@@ -251,8 +251,11 @@ def test_page(request):
         <button class="btn-bank-sync" id="btn-bank-sync">Sync Bank</button>
         <button class="btn-bank-sync" id="btn-bank-enrich">Enrich Bank</button>
         <button class="btn-bank" id="btn-stripe-connect" style="background:#635bff">Connect Stripe</button>
+        <button class="btn-bank-sync" id="btn-stripe-sync">Sync Stripe</button>
         <button class="btn-bank" id="btn-paypal-connect" style="background:#003087">Connect PayPal</button>
+        <button class="btn-bank-sync" id="btn-paypal-sync">Sync PayPal</button>
         <button class="btn-bank" id="btn-mollie-connect" style="background:#000">Connect Mollie</button>
+        <button class="btn-bank-sync" id="btn-mollie-sync">Sync Mollie</button>
         <div id="status"></div>
     </div>
 
@@ -960,6 +963,24 @@ def test_page(request):
                 }
             } catch(e) { showStatus('Error: ' + e.message); }
             this.disabled = false;
+        });
+
+        /* --- Provider Sync Buttons --- */
+        ['stripe', 'paypal', 'mollie'].forEach(function(provider) {
+            document.getElementById('btn-' + provider + '-sync').addEventListener('click', async function() {
+                this.disabled = true;
+                showStatus('Syncing ' + provider + ' data...', true);
+                try {
+                    var resp = await fetch('/api/' + provider + '/sync/', {
+                        method: 'POST',
+                        headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    });
+                    var data = await resp.json();
+                    showStatus(provider + ' sync: ' + JSON.stringify(data));
+                    loadProviders();
+                } catch(e) { showStatus(provider + ' sync error: ' + e.message); }
+                this.disabled = false;
+            });
         });
 
         /* --- Generic Provider Sync --- */
