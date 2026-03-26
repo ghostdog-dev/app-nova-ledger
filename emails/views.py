@@ -894,7 +894,30 @@ def test_page(request):
             } catch(e) { console.error('Summary load error:', e); }
         }
 
-        /* --- OAuth Connect (Stripe, PayPal, Mollie) --- */
+        /* --- Stripe Connect (API key) --- */
+        document.getElementById('btn-stripe-connect').addEventListener('click', async function() {
+            var key = prompt('Enter your Stripe Secret Key (sk_test_... or sk_live_...):');
+            if (!key) return;
+            this.disabled = true;
+            showStatus('Connecting Stripe...', true);
+            try {
+                var resp = await fetch('/api/stripe/connect/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_key: key})
+                });
+                var data = await resp.json();
+                if (resp.ok) {
+                    showStatus('Stripe connected! ' + (data.account_name || data.account_id || ''));
+                    loadProviders();
+                } else {
+                    showStatus('Stripe error: ' + (data.error || JSON.stringify(data)));
+                }
+            } catch(e) { showStatus('Error: ' + e.message); }
+            this.disabled = false;
+        });
+
+        /* --- OAuth Connect (PayPal, Mollie) --- */
         function oauthConnect(provider) {
             return async function() {
                 this.disabled = true;
@@ -905,7 +928,7 @@ def test_page(request):
                         headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
                     });
                     var data = await resp.json();
-                    var url = data.authorize_url || data.webview_url;
+                    var url = data.authorize_url;
                     if (url) {
                         window.location.href = url;
                     } else {
@@ -915,7 +938,6 @@ def test_page(request):
                 this.disabled = false;
             };
         }
-        document.getElementById('btn-stripe-connect').addEventListener('click', oauthConnect('stripe'));
         document.getElementById('btn-paypal-connect').addEventListener('click', oauthConnect('paypal'));
         document.getElementById('btn-mollie-connect').addEventListener('click', oauthConnect('mollie'));
 

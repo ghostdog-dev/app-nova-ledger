@@ -33,67 +33,47 @@ logger = logging.getLogger(__name__)
 
 
 class StripeConnectView(APIView):
-    """Start Stripe Connect OAuth flow -- returns authorize URL."""
+    """Connect Stripe using API secret key (sk_test_ or sk_live_)."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        authorize_url = (
-            f'https://connect.stripe.com/oauth/authorize'
-            f'?response_type=code'
-            f'&client_id={django_settings.STRIPE_CLIENT_ID}'
-            f'&scope=read_only'
-            f'&redirect_uri={django_settings.STRIPE_CONNECT_REDIRECT_URI}'
-        )
-        return Response({'authorize_url': authorize_url})
-
-
-class StripeCallbackView(View):
-    """Handle OAuth callback from Stripe Connect."""
-
-    def get(self, request):
-        code = request.GET.get('code')
-        error = request.GET.get('error')
-
-        if error:
-            return redirect(f'/emails/test/?stripe_error={error}')
-
-        if not code:
-            return redirect('/emails/test/?stripe_error=no_code')
-
-        if not request.user.is_authenticated:
-            return redirect('/login/?next=/emails/test/')
+        api_key = request.data.get('api_key', '')
+        if not api_key or not api_key.startswith(('sk_test_', 'sk_live_', 'rk_test_', 'rk_live_')):
+            return Response({'error': 'Invalid Stripe key. Must start with sk_test_ or sk_live_'}, status=400)
 
         try:
-            response = stripe_lib.OAuth.token(
-                grant_type='authorization_code',
-                code=code,
-                api_key=django_settings.STRIPE_SECRET_KEY,
-            )
+            stripe_lib.api_key = None  # reset global
+            account = stripe_lib.Account.retrieve(api_key=api_key)
+            name = ''
+            if hasattr(account, 'business_profile') and account.business_profile:
+                name = account.business_profile.get('name', '') or ''
+            if not name and hasattr(account, 'settings') and account.settings:
+                name = account.settings.get('dashboard', {}).get('display_name', '') or ''
 
             StripeConnection.objects.update_or_create(
                 user=request.user,
                 defaults={
-                    'stripe_account_id': response.get('stripe_user_id', ''),
-                    'access_token': response.get('access_token', ''),
-                    'refresh_token': response.get('refresh_token', ''),
-                    'scope': response.get('scope', ''),
+                    'stripe_account_id': account.id,
+                    'access_token': api_key,
+                    'account_name': name,
                     'is_active': True,
-                },
+                }
             )
-            logger.info('Stripe connected for user %s (account %s)',
-                        request.user.email, response.get('stripe_user_id', ''))
 
-            # Auto-sync after connecting
+            # Auto-sync
             try:
                 sync_stripe_data(request.user)
-            except Exception:
-                logger.exception('Auto-sync failed after Stripe connect for %s', request.user.email)
+            except Exception as e:
+                logger.warning('Stripe auto-sync failed: %s', e)
 
-            return redirect('/emails/test/?stripe_connected=true')
-
+            return Response({'connected': True, 'account_id': account.id, 'account_name': name})
+        except stripe_lib.error.AuthenticationError:
+            return Response({'error': 'Invalid API key'}, status=400)
         except Exception as e:
-            logger.exception('Stripe OAuth callback failed')
-            return redirect(f'/emails/test/?stripe_error={str(e)[:100]}')
+            return Response({'error': str(e)}, status=400)
+
+
+    # StripeCallbackView removed — Stripe uses API key, not OAuth redirect
 
 
 class StripeSyncView(APIView):
