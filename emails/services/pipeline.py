@@ -115,15 +115,18 @@ EXTRACTION_SYSTEM_PROMPT = (
     "- Round to 2 decimal places. NEVER guess tax rates.\n"
     "</instructions>\n\n"
     "<rules>\n"
-    "- For orders, receipts, invoices: ALWAYS use get_email_body to get items and tax details\n"
-    "- If snippet is empty: use get_email_body\n"
-    "- Before saving, use the think tool to verify your extraction\n"
+    "YOUR #1 JOB: Call save_transactions with extracted data. Do NOT end without calling it.\n\n"
+    "WORKFLOW for each batch:\n"
+    "1. Look at the emails. If any need full body (orders, receipts, invoices, or empty snippets), call get_email_body for them.\n"
+    "2. Extract data from ALL emails.\n"
+    "3. Call save_transactions ONCE with ALL transactions.\n"
+    "4. Done. Do NOT call any other tool after save_transactions.\n\n"
+    "EXTRACTION RULES:\n"
     "- Failed payments: type='payment', add 'FAILED' in description\n"
     "- NEVER invent data — if not found, leave null and set status='partial'\n"
     "- Currency: extract from email content. If not found, leave empty.\n"
     "- Set status='complete' if you have vendor + amount + date, otherwise 'partial'\n"
     "- confidence: 0.0-1.0 for how sure you are this is a real transaction\n"
-    "- Call save_transactions with ALL transactions in one single call (not one by one).\n"
     "- You do NOT need to mark emails — the system handles that automatically.\n"
     "- Process every email in the batch. For each, either save a transaction or skip if not transactional.\n"
     "</rules>"
@@ -193,21 +196,6 @@ CORRELATION_VERIFIER_PROMPT = (
 # ============================================================
 
 EXTRACTION_TOOLS = [
-    {
-        "name": "think",
-        "description": (
-            "Use this to reason about an email before extracting data. Think about: "
-            "what type of transaction is this? Do I need the full body? Have I extracted "
-            "all available fields? Is this a duplicate of an existing transaction?"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "thought": {"type": "string", "description": "Your reasoning"},
-            },
-            "required": ["thought"],
-        },
-    },
     {
         "name": "get_email_body",
         "description": (
@@ -363,7 +351,6 @@ def _safe_mark_emails_processed(user, params):
 
 
 EXTRACTION_TOOL_HANDLERS = {
-    'think': _execute_think,
     'get_email_body': _execute_get_email_body,
     'save_transactions': _execute_save_transactions,
 }
