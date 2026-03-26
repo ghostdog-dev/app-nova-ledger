@@ -77,6 +77,10 @@ def test_page(request):
         .btn-sync:hover { background: var(--primary-hover); }
         .btn-classify { background: var(--success); color: #fff; }
         .btn-classify:hover { background: var(--success-hover); }
+        .btn-bank { background: #7c3aed; color: #fff; }
+        .btn-bank:hover { background: #6d28d9; }
+        .btn-bank-sync { background: #8b5cf6; color: #fff; }
+        .btn-bank-sync:hover { background: #7c3aed; }
         button:disabled { opacity: 0.5; cursor: wait; }
         #status {
             flex: 1; min-width: 200px; padding: 10px 14px; border-radius: var(--radius);
@@ -243,6 +247,8 @@ def test_page(request):
     <div class="top-bar">
         <button class="btn-sync" id="btn-sync">Sync Emails</button>
         <button class="btn-classify" id="btn-classify">Classify with AI</button>
+        <button class="btn-bank" id="btn-bank-connect">Connect Bank</button>
+        <button class="btn-bank-sync" id="btn-bank-sync">Sync Bank</button>
         <div id="status"></div>
     </div>
 
@@ -250,12 +256,24 @@ def test_page(request):
 
     <div class="tabs">
         <button class="tab active" data-tab="transactions">Transactions</button>
+        <button class="tab" data-tab="bank-transactions">Bank</button>
         <button class="tab" data-tab="emails">Emails</button>
         <button class="tab" data-tab="log">Agent Log</button>
     </div>
 
     <div id="transactions" class="tab-content active">
         <div class="tx-list" id="tx-list"></div>
+    </div>
+
+    <div id="bank-transactions" class="tab-content">
+        <div class="email-table-wrap">
+            <table class="email-table">
+                <thead><tr>
+                    <th>Date</th><th>Label</th><th>Amount</th><th>Type</th><th>Account</th><th>Card</th>
+                </tr></thead>
+                <tbody id="bank-tx-rows"></tbody>
+            </table>
+        </div>
     </div>
 
     <div id="emails" class="tab-content">
@@ -295,7 +313,7 @@ def test_page(request):
         }
 
         /* --- Tabs --- */
-        var tabNames = ['transactions', 'emails', 'log'];
+        var tabNames = ['transactions', 'bank-transactions', 'emails', 'log'];
         document.querySelectorAll('.tab').forEach(function(tabBtn) {
             tabBtn.addEventListener('click', function() {
                 var name = tabBtn.getAttribute('data-tab');
@@ -628,9 +646,87 @@ def test_page(request):
             } catch(e) {}
         }
 
+        /* --- Bank Connect --- */
+        document.getElementById('btn-bank-connect').addEventListener('click', async function() {
+            var btn = this; btn.disabled = true;
+            showStatus('Connecting to bank...', true);
+            try {
+                var resp = await fetch('/api/banking/connect/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                });
+                var data = await resp.json();
+                if (data.webview_url) {
+                    showStatus('Redirecting to bank login...');
+                    window.location.href = data.webview_url;
+                } else {
+                    showStatus('Error: ' + JSON.stringify(data));
+                }
+            } catch(e) { showStatus('Error: ' + e.message); }
+            btn.disabled = false;
+        });
+
+        /* --- Bank Sync --- */
+        document.getElementById('btn-bank-sync').addEventListener('click', async function() {
+            var btn = this; btn.disabled = true;
+            showStatus('Syncing bank data...', true);
+            try {
+                var resp = await fetch('/api/banking/sync/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                });
+                var data = await resp.json();
+                showStatus('Bank sync done! Accounts: ' + (data.accounts_synced||0) + ', Transactions: ' + (data.transactions_synced||0));
+                loadBankTransactions();
+            } catch(e) { showStatus('Error: ' + e.message); }
+            btn.disabled = false;
+        });
+
+        /* --- Load Bank Transactions --- */
+        async function loadBankTransactions() {
+            try {
+                var resp = await fetch('/api/banking/transactions/');
+                var data = await resp.json();
+                var rows = document.getElementById('bank-tx-rows');
+                rows.innerHTML = '';
+                if (!data.length) {
+                    var tr = document.createElement('tr');
+                    var td = document.createElement('td');
+                    td.colSpan = 6;
+                    td.textContent = 'No bank transactions. Click "Connect Bank" to link your account.';
+                    td.style.textAlign = 'center';
+                    td.style.padding = '20px';
+                    td.style.color = '#9ca3af';
+                    tr.appendChild(td);
+                    rows.appendChild(tr);
+                    return;
+                }
+                data.forEach(function(t) {
+                    var tr = document.createElement('tr');
+                    var vals = [
+                        t.date || '?',
+                        t.simplified_wording || t.original_wording || '-',
+                        (t.value != null ? t.value + ' ' + (t.currency || '') : '-'),
+                        t.transaction_type || '-',
+                        t.account_name || '-',
+                        t.card || '-',
+                    ];
+                    vals.forEach(function(v) {
+                        var td = document.createElement('td');
+                        td.textContent = v;
+                        if (v && v.toString().startsWith('-') && vals.indexOf(v) === 2) td.style.color = '#ef4444';
+                        if (v && !v.toString().startsWith('-') && vals.indexOf(v) === 2 && v !== '-') td.style.color = '#10b981';
+                        tr.appendChild(td);
+                    });
+                    rows.appendChild(tr);
+                });
+            } catch(e) { console.error('Bank tx load error:', e); }
+        }
+
         /* --- Init --- */
         loadEmails();
         loadTransactions();
+        loadBankTransactions();
     </script>
 </body>
 </html>"""

@@ -32,12 +32,16 @@ class BankTransactionSerializer(serializers.ModelSerializer):
     account_name = serializers.CharField(
         source='account.name', read_only=True, default=''
     )
+    currency = serializers.CharField(
+        source='account.currency', read_only=True, default=''
+    )
 
     class Meta:
         model = BankTransaction
         fields = [
             'id', 'powens_transaction_id', 'account_id', 'account_name',
-            'date', 'value', 'original_wording', 'simplified_wording',
+            'date', 'value', 'currency',
+            'original_wording', 'simplified_wording',
             'transaction_type', 'coming', 'card',
             'counterparty_label', 'counterparty_iban',
             'raw_data', 'created_at',
