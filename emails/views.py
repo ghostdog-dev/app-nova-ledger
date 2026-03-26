@@ -249,6 +249,7 @@ def test_page(request):
         <button class="btn-classify" id="btn-classify">Classify with AI</button>
         <button class="btn-bank" id="btn-bank-connect">Connect Bank</button>
         <button class="btn-bank-sync" id="btn-bank-sync">Sync Bank</button>
+        <button class="btn-bank-sync" id="btn-bank-enrich">Enrich Bank</button>
         <div id="status"></div>
     </div>
 
@@ -259,6 +260,7 @@ def test_page(request):
         <button class="tab" data-tab="bank-transactions">Bank</button>
         <button class="tab" data-tab="emails">Emails</button>
         <button class="tab" data-tab="log">Agent Log</button>
+        <button class="tab" data-tab="summary">Summary</button>
     </div>
 
     <div id="transactions" class="tab-content active">
@@ -269,7 +271,7 @@ def test_page(request):
         <div class="email-table-wrap">
             <table class="email-table">
                 <thead><tr>
-                    <th>Date</th><th>Label</th><th>Amount</th><th>Type</th><th>Email Match</th><th>Details</th>
+                    <th>Date</th><th>Label</th><th>Amount</th><th>Category</th><th>Type</th><th>Email Match</th>
                 </tr></thead>
                 <tbody id="bank-tx-rows"></tbody>
             </table>
@@ -293,6 +295,10 @@ def test_page(request):
         </div>
     </div>
 
+    <div id="summary" class="tab-content">
+        <div id="summary-content" style="padding: 10px;"></div>
+    </div>
+
     <script>
         /* --- Helpers --- */
         function getCSRF() {
@@ -313,7 +319,7 @@ def test_page(request):
         }
 
         /* --- Tabs --- */
-        var tabNames = ['transactions', 'bank-transactions', 'emails', 'log'];
+        var tabNames = ['transactions', 'bank-transactions', 'emails', 'log', 'summary'];
         document.querySelectorAll('.tab').forEach(function(tabBtn) {
             tabBtn.addEventListener('click', function() {
                 var name = tabBtn.getAttribute('data-tab');
@@ -718,42 +724,50 @@ def test_page(request):
                     td3.style.color = t.value < 0 ? '#ef4444' : '#10b981';
                     td3.style.fontWeight = '600';
                     tr.appendChild(td3);
-                    // Type
+                    // Category column
                     var td4 = document.createElement('td');
-                    td4.textContent = t.transaction_type || '-';
-                    td4.style.fontSize = '12px';
+                    td4.style.fontSize = '11px';
+                    if (t.expense_category) {
+                        var catBadge = document.createElement('span');
+                        catBadge.textContent = t.expense_category + ' ' + (t.expense_category_label || '');
+                        var bgColor = t.business_personal === 'business' ? '#3b82f6' :
+                                      t.business_personal === 'personal' ? '#f59e0b' : '#9ca3af';
+                        catBadge.style.cssText = 'background:' + bgColor + ';color:#fff;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;';
+                        td4.appendChild(catBadge);
+                        if (t.is_recurring) {
+                            var recBadge = document.createElement('span');
+                            recBadge.textContent = ' recurring';
+                            recBadge.style.cssText = 'color:#8b5cf6;font-size:10px;font-weight:600;';
+                            td4.appendChild(recBadge);
+                        }
+                        if (t.tva_deductible) {
+                            var tvaBadge = document.createElement('span');
+                            tvaBadge.textContent = ' TVA';
+                            tvaBadge.style.cssText = 'color:#10b981;font-size:10px;font-weight:600;';
+                            td4.appendChild(tvaBadge);
+                        }
+                    } else {
+                        td4.textContent = t.transaction_type || '-';
+                        td4.style.color = '#d1d5db';
+                    }
                     tr.appendChild(td4);
-                    // Email Match
+                    // Type
                     var td5 = document.createElement('td');
+                    td5.textContent = t.transaction_type || '-';
+                    td5.style.fontSize = '12px';
+                    tr.appendChild(td5);
+                    // Email Match
+                    var td6 = document.createElement('td');
                     if (t.matched_email) {
                         var m = t.matched_email;
                         var badge = document.createElement('span');
                         badge.textContent = m.vendor_name;
                         badge.style.cssText = 'background:#10b981;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;';
-                        td5.appendChild(badge);
+                        td6.appendChild(badge);
                         var conf = document.createElement('span');
                         conf.textContent = ' ' + Math.round(m.confidence * 100) + '%';
                         conf.style.cssText = 'font-size:11px;color:#6b7280;';
-                        td5.appendChild(conf);
-                    } else {
-                        td5.textContent = '-';
-                        td5.style.color = '#d1d5db';
-                    }
-                    tr.appendChild(td5);
-                    // Details (items, invoice, TVA from match)
-                    var td6 = document.createElement('td');
-                    td6.style.fontSize = '11px';
-                    td6.style.maxWidth = '250px';
-                    if (t.matched_email) {
-                        var parts = [];
-                        if (t.matched_email.invoice_number) parts.push('Inv: ' + t.matched_email.invoice_number);
-                        if (t.matched_email.tax_amount) parts.push('Tax: ' + t.matched_email.tax_amount);
-                        if (t.matched_email.items && t.matched_email.items.length) {
-                            parts.push(t.matched_email.items.map(function(i){return i.name;}).join(', '));
-                        }
-                        if (t.matched_email.description && !parts.length) parts.push(t.matched_email.description);
-                        td6.textContent = parts.join(' | ') || '-';
-                        td6.style.color = '#374151';
+                        td6.appendChild(conf);
                     } else {
                         td6.textContent = '-';
                         td6.style.color = '#d1d5db';
@@ -764,10 +778,119 @@ def test_page(request):
             } catch(e) { console.error('Bank tx load error:', e); }
         }
 
+        /* --- Bank Enrich --- */
+        document.getElementById('btn-bank-enrich').addEventListener('click', async function() {
+            var btn = this; btn.disabled = true;
+            showStatus('Enriching bank data...', true);
+            try {
+                var resp = await fetch('/api/banking/enrich/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({force: true})
+                });
+                var data = await resp.json();
+                showStatus('Enriched! ' + (data.enriched||0) + ' classified, ' + (data.unclassified||0) + ' unclassified, ' + (data.recurring_groups||0) + ' recurring groups');
+                loadBankTransactions();
+                loadSummary();
+            } catch(e) { showStatus('Error: ' + e.message); }
+            btn.disabled = false;
+        });
+
+        /* --- Summary --- */
+        async function loadSummary() {
+            try {
+                var resp = await fetch('/api/banking/summary/');
+                var data = await resp.json();
+                var container = document.getElementById('summary-content');
+                container.innerHTML = '';
+
+                if (!data.length) {
+                    container.textContent = 'No data. Enrich bank transactions first.';
+                    return;
+                }
+
+                data.forEach(function(m) {
+                    var card = document.createElement('div');
+                    card.style.cssText = 'background:#fff;border-radius:8px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.1);';
+
+                    // Header
+                    var h = document.createElement('h3');
+                    h.textContent = m.month + '/' + m.year;
+                    h.style.cssText = 'font-size:16px;margin-bottom:12px;';
+                    card.appendChild(h);
+
+                    // Income/Expenses row
+                    var row = document.createElement('div');
+                    row.style.cssText = 'display:flex;gap:20px;margin-bottom:12px;flex-wrap:wrap;';
+
+                    var stats = [
+                        {label: 'Income', value: parseFloat(m.income.total).toFixed(2) + ' EUR', color: '#10b981', count: m.income.count},
+                        {label: 'Expenses', value: parseFloat(m.expenses.total).toFixed(2) + ' EUR', color: '#ef4444', count: m.expenses.count},
+                        {label: 'Business', value: parseFloat(m.business_total).toFixed(2) + ' EUR', color: '#3b82f6'},
+                        {label: 'Personal', value: parseFloat(m.personal_total).toFixed(2) + ' EUR', color: '#f59e0b'},
+                        {label: 'TVA Deductible', value: parseFloat(m.tva_deductible_total).toFixed(2) + ' EUR', color: '#8b5cf6'},
+                        {label: 'Matched Emails', value: m.matched_with_email + '/' + m.total_transactions, color: '#6b7280'},
+                        {label: 'Recurring', value: parseFloat(m.recurring.total).toFixed(2) + ' EUR (' + m.recurring.count + ')', color: '#6366f1'},
+                    ];
+
+                    stats.forEach(function(s) {
+                        var box = document.createElement('div');
+                        box.style.cssText = 'min-width:120px;';
+                        var val = document.createElement('div');
+                        val.textContent = s.value;
+                        val.style.cssText = 'font-size:16px;font-weight:700;color:' + s.color + ';';
+                        box.appendChild(val);
+                        var lbl = document.createElement('div');
+                        lbl.textContent = s.label + (s.count ? ' (' + s.count + ')' : '');
+                        lbl.style.cssText = 'font-size:11px;color:#6b7280;';
+                        box.appendChild(lbl);
+                        row.appendChild(box);
+                    });
+                    card.appendChild(row);
+
+                    // Category breakdown
+                    var catTitle = document.createElement('div');
+                    catTitle.textContent = 'By Category';
+                    catTitle.style.cssText = 'font-size:12px;font-weight:600;margin-bottom:6px;color:#374151;';
+                    card.appendChild(catTitle);
+
+                    var catTable = document.createElement('table');
+                    catTable.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
+                    var categories = m.by_category || {};
+                    Object.keys(categories).forEach(function(code) {
+                        var cat = categories[code];
+                        var tr = document.createElement('tr');
+                        tr.style.borderBottom = '1px solid #f3f4f6';
+                        var td1 = document.createElement('td');
+                        td1.textContent = code;
+                        td1.style.cssText = 'padding:4px 8px;font-weight:600;color:#6b7280;width:60px;';
+                        tr.appendChild(td1);
+                        var td2 = document.createElement('td');
+                        td2.textContent = cat.label;
+                        td2.style.padding = '4px 8px';
+                        tr.appendChild(td2);
+                        var td3 = document.createElement('td');
+                        td3.textContent = parseFloat(cat.total).toFixed(2) + ' EUR';
+                        td3.style.cssText = 'padding:4px 8px;text-align:right;font-weight:600;';
+                        tr.appendChild(td3);
+                        var td4 = document.createElement('td');
+                        td4.textContent = cat.count + ' txs';
+                        td4.style.cssText = 'padding:4px 8px;text-align:right;color:#9ca3af;';
+                        tr.appendChild(td4);
+                        catTable.appendChild(tr);
+                    });
+                    card.appendChild(catTable);
+
+                    container.appendChild(card);
+                });
+            } catch(e) { console.error('Summary load error:', e); }
+        }
+
         /* --- Init --- */
         loadEmails();
         loadTransactions();
         loadBankTransactions();
+        loadSummary();
     </script>
 </body>
 </html>"""
