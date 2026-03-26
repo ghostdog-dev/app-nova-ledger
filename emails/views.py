@@ -250,6 +250,9 @@ def test_page(request):
         <button class="btn-bank" id="btn-bank-connect">Connect Bank</button>
         <button class="btn-bank-sync" id="btn-bank-sync">Sync Bank</button>
         <button class="btn-bank-sync" id="btn-bank-enrich">Enrich Bank</button>
+        <button class="btn-bank" id="btn-stripe-connect" style="background:#635bff">Connect Stripe</button>
+        <button class="btn-bank" id="btn-paypal-connect" style="background:#003087">Connect PayPal</button>
+        <button class="btn-bank" id="btn-mollie-connect" style="background:#000">Connect Mollie</button>
         <div id="status"></div>
     </div>
 
@@ -261,6 +264,7 @@ def test_page(request):
         <button class="tab" data-tab="emails">Emails</button>
         <button class="tab" data-tab="log">Agent Log</button>
         <button class="tab" data-tab="summary">Summary</button>
+        <button class="tab" data-tab="providers">Providers</button>
     </div>
 
     <div id="transactions" class="tab-content active">
@@ -299,6 +303,10 @@ def test_page(request):
         <div id="summary-content" style="padding: 10px;"></div>
     </div>
 
+    <div id="providers" class="tab-content">
+        <div id="providers-content" style="padding:10px;"></div>
+    </div>
+
     <script>
         /* --- Helpers --- */
         function getCSRF() {
@@ -319,7 +327,7 @@ def test_page(request):
         }
 
         /* --- Tabs --- */
-        var tabNames = ['transactions', 'bank-transactions', 'emails', 'log', 'summary'];
+        var tabNames = ['transactions', 'bank-transactions', 'emails', 'log', 'summary', 'providers'];
         document.querySelectorAll('.tab').forEach(function(tabBtn) {
             tabBtn.addEventListener('click', function() {
                 var name = tabBtn.getAttribute('data-tab');
@@ -886,11 +894,173 @@ def test_page(request):
             } catch(e) { console.error('Summary load error:', e); }
         }
 
+        /* --- Stripe Connect --- */
+        document.getElementById('btn-stripe-connect').addEventListener('click', async function() {
+            var key = prompt('Enter your Stripe Secret Key (sk_test_... or sk_live_...):');
+            if (!key) return;
+            this.disabled = true;
+            showStatus('Connecting Stripe...', true);
+            try {
+                var resp = await fetch('/api/stripe/connect/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_key: key})
+                });
+                var data = await resp.json();
+                if (resp.ok) {
+                    showStatus('Stripe connected! Account: ' + (data.account_name || data.stripe_account_id || 'OK'));
+                    syncProvider('stripe');
+                } else {
+                    showStatus('Stripe error: ' + JSON.stringify(data));
+                }
+            } catch(e) { showStatus('Error: ' + e.message); }
+            this.disabled = false;
+        });
+
+        /* --- PayPal Connect --- */
+        document.getElementById('btn-paypal-connect').addEventListener('click', async function() {
+            var clientId = prompt('Enter your PayPal Client ID:');
+            if (!clientId) return;
+            var clientSecret = prompt('Enter your PayPal Client Secret:');
+            if (!clientSecret) return;
+            this.disabled = true;
+            showStatus('Connecting PayPal...', true);
+            try {
+                var resp = await fetch('/api/paypal/connect/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({client_id: clientId, client_secret: clientSecret})
+                });
+                var data = await resp.json();
+                if (resp.ok) {
+                    showStatus('PayPal connected!');
+                    syncProvider('paypal');
+                } else {
+                    showStatus('PayPal error: ' + JSON.stringify(data));
+                }
+            } catch(e) { showStatus('Error: ' + e.message); }
+            this.disabled = false;
+        });
+
+        /* --- Mollie Connect --- */
+        document.getElementById('btn-mollie-connect').addEventListener('click', async function() {
+            var key = prompt('Enter your Mollie API Key (test_... or live_...):');
+            if (!key) return;
+            this.disabled = true;
+            showStatus('Connecting Mollie...', true);
+            try {
+                var resp = await fetch('/api/mollie/connect/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_key: key})
+                });
+                var data = await resp.json();
+                if (resp.ok) {
+                    showStatus('Mollie connected! Organization: ' + (data.organization_name || 'OK'));
+                    syncProvider('mollie');
+                } else {
+                    showStatus('Mollie error: ' + JSON.stringify(data));
+                }
+            } catch(e) { showStatus('Error: ' + e.message); }
+            this.disabled = false;
+        });
+
+        /* --- Generic Provider Sync --- */
+        async function syncProvider(provider) {
+            showStatus('Syncing ' + provider + ' data...', true);
+            try {
+                var resp = await fetch('/api/' + provider + '/sync/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
+                });
+                var data = await resp.json();
+                showStatus(provider + ' sync done: ' + JSON.stringify(data));
+                loadProviders();
+            } catch(e) { showStatus(provider + ' sync error: ' + e.message); }
+        }
+
+        /* --- Load Providers --- */
+        async function loadProviders() {
+            var container = document.getElementById('providers-content');
+            container.innerHTML = '';
+
+            var providers = [
+                {name: 'Stripe', endpoint: '/api/stripe/balance-transactions/', color: '#635bff'},
+                {name: 'PayPal', endpoint: '/api/paypal/transactions/', color: '#003087'},
+                {name: 'Mollie', endpoint: '/api/mollie/payments/', color: '#000'},
+            ];
+
+            for (var p of providers) {
+                try {
+                    var resp = await fetch(p.endpoint);
+                    var data = await resp.json();
+                    if (!data.length) continue;
+
+                    var section = document.createElement('div');
+                    section.style.cssText = 'margin-bottom:20px;';
+
+                    var title = document.createElement('h3');
+                    title.textContent = p.name + ' (' + data.length + ' transactions)';
+                    title.style.cssText = 'font-size:14px;margin-bottom:8px;color:' + p.color + ';';
+                    section.appendChild(title);
+
+                    var table = document.createElement('table');
+                    table.className = 'email-table';
+                    table.style.fontSize = '12px';
+
+                    var thead = document.createElement('thead');
+                    var headerRow = document.createElement('tr');
+                    ['Date', 'Description', 'Amount', 'Status', 'Type'].forEach(function(h) {
+                        var th = document.createElement('th');
+                        th.textContent = h;
+                        headerRow.appendChild(th);
+                    });
+                    thead.appendChild(headerRow);
+                    table.appendChild(thead);
+
+                    var tbody = document.createElement('tbody');
+                    data.slice(0, 50).forEach(function(t) {
+                        var tr = document.createElement('tr');
+                        var date = t.created_at_stripe || t.initiation_date || t.created_at_mollie || t.created_date || '?';
+                        if (date.length > 10) date = date.substring(0, 10);
+
+                        var desc = t.description || t.statement_descriptor || t.note || '-';
+                        var amount = t.amount_decimal || t.amount || '?';
+                        var currency = t.currency || '';
+                        var status = t.status || '-';
+                        var type = t.type || t.transaction_type || t.event_code || t.method || '-';
+
+                        [date, desc, amount + ' ' + currency, status, type].forEach(function(v, i) {
+                            var td = document.createElement('td');
+                            td.textContent = v;
+                            if (i === 2) {
+                                td.style.fontWeight = '600';
+                                td.style.color = parseFloat(amount) < 0 ? '#ef4444' : '#10b981';
+                            }
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                    table.appendChild(tbody);
+                    section.appendChild(table);
+                    container.appendChild(section);
+                } catch(e) { /* provider not connected, skip */ }
+            }
+
+            if (!container.children.length) {
+                container.textContent = 'No provider data. Connect Stripe, PayPal, or Mollie above.';
+                container.style.color = '#9ca3af';
+                container.style.textAlign = 'center';
+                container.style.padding = '20px';
+            }
+        }
+
         /* --- Init --- */
         loadEmails();
         loadTransactions();
         loadBankTransactions();
         loadSummary();
+        loadProviders();
     </script>
 </body>
 </html>"""
