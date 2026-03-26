@@ -33,7 +33,6 @@ nova-ledger/
       gmail_fetcher.py  # Gmail API fetch + pre-filter
       microsoft_fetcher.py  # Microsoft Graph fetch
       token_refresh.py  # Auto-refresh OAuth tokens
-      prefilter.py      # Rule-based prefilter (deprecated — AI handles triage)
       merge.py          # Post-processing merge (safety net)
     views.py            # API endpoints + test page HTML
     urls.py

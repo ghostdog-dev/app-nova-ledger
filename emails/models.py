@@ -65,10 +65,10 @@ class Transaction(models.Model):
     transaction_date = models.DateField(null=True, blank=True)
     invoice_number = models.CharField(max_length=100, blank=True)
     order_number = models.CharField(max_length=100, blank=True)
-    amount_tax_excl = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)  # HT
-    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)  # TVA
+    amount_tax_excl = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)  # amount excluding tax
+    tax_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)  # tax amount
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)  # e.g. 20.00 for 20%
-    payment_method = models.CharField(max_length=50, blank=True)  # CB, virement, PayPal, etc.
+    payment_method = models.CharField(max_length=50, blank=True)  # debit card, PayPal, bank transfer, etc.
     payment_reference = models.CharField(max_length=255, blank=True)  # transaction ID from payment processor
     items = models.JSONField(default=list)  # [{name: "...", quantity: 1, unit_price: 10.00}]
     description = models.TextField(blank=True)

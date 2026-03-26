@@ -489,9 +489,9 @@ def test_page(request):
             /* Row 1: Amounts */
             var grid1 = el('div', 'tx-grid');
             var fields1 = [
-                ['Amount TTC', t.amount !== null ? t.amount + ' ' + t.currency : '-'],
-                ['Amount HT', t.amount_tax_excl !== null ? t.amount_tax_excl + ' ' + t.currency : '-'],
-                ['TVA', t.tax_amount !== null ? t.tax_amount + ' ' + t.currency : '-'],
+                ['Total (incl. tax)', t.amount !== null ? t.amount + ' ' + t.currency : '-'],
+                ['Amount (excl. tax)', t.amount_tax_excl !== null ? t.amount_tax_excl + ' ' + t.currency : '-'],
+                ['Tax Amount', t.tax_amount !== null ? t.tax_amount + ' ' + t.currency : '-'],
                 ['Tax Rate', t.tax_rate !== null ? t.tax_rate + '%' : '-'],
             ];
             fields1.forEach(function(f) {

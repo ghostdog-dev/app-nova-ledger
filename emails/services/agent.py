@@ -337,7 +337,7 @@ def _fetch_microsoft_body(email_obj):
         content = re.sub(r'<[^>]+>', ' ', content)
         content = re.sub(r'\s+', ' ', content).strip()
 
-    return content[:3000]
+    return content[:settings.AI_EMAIL_BODY_MAX_CHARS]
 
 
 def _execute_get_email_body(user, params):
@@ -779,7 +779,7 @@ def _run_agent_on_batch(client, user, emails_data, batch_stats, rate_limiter=Non
 
     response = _call_api_with_retry(
         client,
-        model="claude-haiku-4-5-20251001",
+        model=settings.AI_MODEL_TRIAGE,
         max_tokens=4096,
         system=SYSTEM_PROMPT,
         tools=TOOLS,
@@ -818,6 +818,7 @@ def _run_agent_on_batch(client, user, emails_data, batch_stats, rate_limiter=Non
                 logger.info(f'  TOOL CALL: {tool_name}({json.dumps(tool_input, default=str)[:300]})')
 
                 handler = TOOL_HANDLERS.get(tool_name)
+                is_error = False
                 if handler:
                     try:
                         result = handler(user, tool_input)
@@ -837,14 +838,19 @@ def _run_agent_on_batch(client, user, emails_data, batch_stats, rate_limiter=Non
                     except Exception as e:
                         logger.error(f'  TOOL ERROR: {tool_name}: {e}')
                         result = {"error": str(e)}
+                        is_error = True
                 else:
                     result = {"error": f"Unknown tool: {tool_name}"}
+                    is_error = True
 
-                tool_results.append({
+                tool_result_entry = {
                     "type": "tool_result",
                     "tool_use_id": block.id,
                     "content": json.dumps(result, default=str),
-                })
+                }
+                if is_error:
+                    tool_result_entry["is_error"] = True
+                tool_results.append(tool_result_entry)
 
         messages.append({"role": "assistant", "content": assistant_content})
         messages.append({"role": "user", "content": tool_results})
@@ -854,7 +860,7 @@ def _run_agent_on_batch(client, user, emails_data, batch_stats, rate_limiter=Non
 
         response = _call_api_with_retry(
             client,
-            model="claude-haiku-4-5-20251001",
+            model=settings.AI_MODEL_TRIAGE,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             tools=TOOLS,
