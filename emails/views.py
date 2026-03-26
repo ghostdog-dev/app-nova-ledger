@@ -269,7 +269,7 @@ def test_page(request):
         <div class="email-table-wrap">
             <table class="email-table">
                 <thead><tr>
-                    <th>Date</th><th>Label</th><th>Amount</th><th>Type</th><th>Account</th><th>Card</th>
+                    <th>Date</th><th>Label</th><th>Amount</th><th>Type</th><th>Email Match</th><th>Details</th>
                 </tr></thead>
                 <tbody id="bank-tx-rows"></tbody>
             </table>
@@ -703,21 +703,62 @@ def test_page(request):
                 }
                 data.forEach(function(t) {
                     var tr = document.createElement('tr');
-                    var vals = [
-                        t.date || '?',
-                        t.simplified_wording || t.original_wording || '-',
-                        (t.value != null ? t.value + ' ' + (t.currency || '') : '-'),
-                        t.transaction_type || '-',
-                        t.account_name || '-',
-                        t.card || '-',
-                    ];
-                    vals.forEach(function(v) {
-                        var td = document.createElement('td');
-                        td.textContent = v;
-                        if (v && v.toString().startsWith('-') && vals.indexOf(v) === 2) td.style.color = '#ef4444';
-                        if (v && !v.toString().startsWith('-') && vals.indexOf(v) === 2 && v !== '-') td.style.color = '#10b981';
-                        tr.appendChild(td);
-                    });
+                    // Date
+                    var td1 = document.createElement('td');
+                    td1.textContent = t.rdate || t.date || '?';
+                    tr.appendChild(td1);
+                    // Label
+                    var td2 = document.createElement('td');
+                    td2.textContent = t.simplified_wording || t.original_wording || '-';
+                    td2.style.fontWeight = '500';
+                    tr.appendChild(td2);
+                    // Amount
+                    var td3 = document.createElement('td');
+                    td3.textContent = t.value != null ? t.value + ' ' + (t.currency || '') : '-';
+                    td3.style.color = t.value < 0 ? '#ef4444' : '#10b981';
+                    td3.style.fontWeight = '600';
+                    tr.appendChild(td3);
+                    // Type
+                    var td4 = document.createElement('td');
+                    td4.textContent = t.transaction_type || '-';
+                    td4.style.fontSize = '12px';
+                    tr.appendChild(td4);
+                    // Email Match
+                    var td5 = document.createElement('td');
+                    if (t.matched_email) {
+                        var m = t.matched_email;
+                        var badge = document.createElement('span');
+                        badge.textContent = m.vendor_name;
+                        badge.style.cssText = 'background:#10b981;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;';
+                        td5.appendChild(badge);
+                        var conf = document.createElement('span');
+                        conf.textContent = ' ' + Math.round(m.confidence * 100) + '%';
+                        conf.style.cssText = 'font-size:11px;color:#6b7280;';
+                        td5.appendChild(conf);
+                    } else {
+                        td5.textContent = '-';
+                        td5.style.color = '#d1d5db';
+                    }
+                    tr.appendChild(td5);
+                    // Details (items, invoice, TVA from match)
+                    var td6 = document.createElement('td');
+                    td6.style.fontSize = '11px';
+                    td6.style.maxWidth = '250px';
+                    if (t.matched_email) {
+                        var parts = [];
+                        if (t.matched_email.invoice_number) parts.push('Inv: ' + t.matched_email.invoice_number);
+                        if (t.matched_email.tax_amount) parts.push('Tax: ' + t.matched_email.tax_amount);
+                        if (t.matched_email.items && t.matched_email.items.length) {
+                            parts.push(t.matched_email.items.map(function(i){return i.name;}).join(', '));
+                        }
+                        if (t.matched_email.description && !parts.length) parts.push(t.matched_email.description);
+                        td6.textContent = parts.join(' | ') || '-';
+                        td6.style.color = '#374151';
+                    } else {
+                        td6.textContent = '-';
+                        td6.style.color = '#d1d5db';
+                    }
+                    tr.appendChild(td6);
                     rows.appendChild(tr);
                 });
             } catch(e) { console.error('Bank tx load error:', e); }
