@@ -250,13 +250,32 @@ def test_page(request):
         <button class="btn-bank" id="btn-bank-connect">Connect Bank</button>
         <button class="btn-bank-sync" id="btn-bank-sync">Sync Bank</button>
         <button class="btn-bank-sync" id="btn-bank-enrich">Enrich Bank</button>
-        <button class="btn-bank" id="btn-stripe-connect" style="background:#635bff">Connect Stripe</button>
-        <button class="btn-bank-sync" id="btn-stripe-sync">Sync Stripe</button>
-        <button class="btn-bank" id="btn-paypal-connect" style="background:#003087">Connect PayPal</button>
-        <button class="btn-bank-sync" id="btn-paypal-sync">Sync PayPal</button>
-        <button class="btn-bank" id="btn-mollie-connect" style="background:#000">Connect Mollie</button>
-        <button class="btn-bank-sync" id="btn-mollie-sync">Sync Mollie</button>
         <div id="status"></div>
+    </div>
+
+    <div style="background:#fff;border-radius:8px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Payment Providers</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <div style="display:flex;align-items:center;gap:4px;">
+                <span style="background:#635bff;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">Stripe</span>
+                <input type="text" id="stripe-key" placeholder="sk_test_..." style="font-size:12px;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:180px;">
+                <button class="btn-bank" id="btn-stripe-connect" style="background:#635bff;padding:4px 10px;font-size:11px;">Save</button>
+                <button class="btn-bank-sync" id="btn-stripe-sync" style="padding:4px 10px;font-size:11px;">Sync</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+                <span style="background:#003087;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">PayPal</span>
+                <input type="text" id="paypal-client-id" placeholder="Client ID" style="font-size:12px;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:140px;">
+                <input type="text" id="paypal-secret" placeholder="Secret" style="font-size:12px;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:140px;">
+                <button class="btn-bank" id="btn-paypal-connect" style="background:#003087;padding:4px 10px;font-size:11px;">Save</button>
+                <button class="btn-bank-sync" id="btn-paypal-sync" style="padding:4px 10px;font-size:11px;">Sync</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:4px;">
+                <span style="background:#000;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">Mollie</span>
+                <input type="text" id="mollie-key" placeholder="test_..." style="font-size:12px;padding:4px 8px;border:1px solid #d1d5db;border-radius:4px;width:180px;">
+                <button class="btn-bank" id="btn-mollie-connect" style="background:#000;padding:4px 10px;font-size:11px;">Save</button>
+                <button class="btn-bank-sync" id="btn-mollie-sync" style="padding:4px 10px;font-size:11px;">Sync</button>
+            </div>
+        </div>
     </div>
 
     <div class="stats" id="stats"></div>
@@ -897,10 +916,10 @@ def test_page(request):
             } catch(e) { console.error('Summary load error:', e); }
         }
 
-        /* --- Provider Connect (Stripe, PayPal, Mollie) --- */
+        /* --- Provider Connect (read from input fields) --- */
         document.getElementById('btn-stripe-connect').addEventListener('click', async function() {
-            var key = prompt('Enter your Stripe Secret Key (sk_test_... or sk_live_...):');
-            if (!key) return;
+            var key = document.getElementById('stripe-key').value.trim();
+            if (!key) { showStatus('Enter a Stripe key first'); return; }
             this.disabled = true;
             showStatus('Connecting Stripe...', true);
             try {
@@ -911,7 +930,7 @@ def test_page(request):
                 });
                 var data = await resp.json();
                 if (resp.ok) {
-                    showStatus('Stripe connected: ' + (data.account_name || data.account_id));
+                    showStatus('Stripe connected: ' + (data.account_name || data.account_id || 'OK'));
                     loadProviders();
                 } else {
                     showStatus('Stripe error: ' + (data.error || JSON.stringify(data)));
@@ -920,22 +939,20 @@ def test_page(request):
             this.disabled = false;
         });
         document.getElementById('btn-paypal-connect').addEventListener('click', async function() {
-            var clientId = prompt('Enter your PayPal Client ID:');
-            if (!clientId) return;
-            var secret = prompt('Enter your PayPal Client Secret:');
-            if (!secret) return;
-            var sandbox = confirm('Use sandbox environment? (OK = sandbox, Cancel = live)');
+            var clientId = document.getElementById('paypal-client-id').value.trim();
+            var secret = document.getElementById('paypal-secret').value.trim();
+            if (!clientId || !secret) { showStatus('Enter PayPal Client ID and Secret'); return; }
             this.disabled = true;
             showStatus('Connecting PayPal...', true);
             try {
                 var resp = await fetch('/api/paypal/connect/', {
                     method: 'POST',
                     headers: {'X-CSRFToken': getCSRF(), 'Content-Type': 'application/json'},
-                    body: JSON.stringify({client_id: clientId, client_secret: secret, is_sandbox: sandbox}),
+                    body: JSON.stringify({client_id: clientId, client_secret: secret, is_sandbox: true}),
                 });
                 var data = await resp.json();
                 if (resp.ok) {
-                    showStatus('PayPal connected!' + (data.connection ? ' (' + (data.connection.account_email || 'sandbox=' + data.connection.is_sandbox) + ')' : ''));
+                    showStatus('PayPal connected!');
                     loadProviders();
                 } else {
                     showStatus('PayPal error: ' + (data.error || JSON.stringify(data)));
@@ -944,8 +961,8 @@ def test_page(request):
             this.disabled = false;
         });
         document.getElementById('btn-mollie-connect').addEventListener('click', async function() {
-            var key = prompt('Enter your Mollie API Key (test_... or live_...):');
-            if (!key) return;
+            var key = document.getElementById('mollie-key').value.trim();
+            if (!key) { showStatus('Enter a Mollie key first'); return; }
             this.disabled = true;
             showStatus('Verifying Mollie API key...', true);
             try {
