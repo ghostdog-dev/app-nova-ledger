@@ -9,7 +9,7 @@ from decimal import Decimal
 
 from django.conf import settings
 
-from banking.models import BankTransaction, TransactionMatch
+from banking.models import BankTransaction, ProviderMatch, TransactionMatch
 from banking.services.utils import normalize_vendor
 from emails.models import Transaction
 
@@ -204,3 +204,284 @@ def correlate_transactions(user):
 
     logger.info('[Correlation-Bank] Done: %d matched, %d unmatched', matched, unmatched)
     return {'bank_matched': matched, 'bank_unmatched': unmatched, 'bank_total': matched + unmatched}
+
+
+def _provider_dates_match(provider_date, email_date, tolerance_days=DATE_TOLERANCE_DAYS):
+    """Check if a provider date and email date are within tolerance."""
+    if not provider_date or not email_date:
+        return False
+    # provider_date may be a datetime — extract .date() if needed
+    p_date = provider_date.date() if hasattr(provider_date, 'date') else provider_date
+    e_date = email_date.date() if hasattr(email_date, 'date') else email_date
+    delta = abs((p_date - e_date).days)
+    return delta <= tolerance_days
+
+
+def _find_provider_email_match(provider_amount, provider_currency, provider_date,
+                                provider_description, email_candidates):
+    """
+    Find the best email transaction match for a provider transaction.
+    Returns {tx, confidence, method} or None.
+    """
+    provider_vendor = normalize_vendor(provider_description)
+    candidates = []
+
+    for ec in email_candidates:
+        etx = ec['tx']
+        e_amount = ec['abs_amount']
+        e_currency = etx.currency or ''
+        e_vendor = ec['normalized_vendor']
+        e_date = etx.transaction_date
+
+        # Currency check
+        if provider_currency and e_currency and provider_currency.upper() != e_currency.upper():
+            continue
+
+        # Amount must match exactly
+        if abs(provider_amount) != e_amount:
+            continue
+
+        # Exact amount + vendor fuzzy + date match
+        if _vendors_match_exact(provider_vendor, e_vendor):
+            if _provider_dates_match(provider_date, e_date, tolerance_days=0):
+                candidates.append({'tx': etx, 'confidence': 0.95, 'method': 'exact'})
+                continue
+
+        if _vendors_match_fuzzy(provider_vendor, e_vendor):
+            if _provider_dates_match(provider_date, e_date, tolerance_days=0):
+                candidates.append({'tx': etx, 'confidence': 0.85, 'method': 'fuzzy_vendor'})
+                continue
+
+        # Amount + date within tolerance (no vendor match needed — provider is authoritative)
+        if _provider_dates_match(provider_date, e_date, tolerance_days=DATE_TOLERANCE_DAYS):
+            if _vendors_match_exact(provider_vendor, e_vendor) or _vendors_match_fuzzy(provider_vendor, e_vendor):
+                candidates.append({'tx': etx, 'confidence': 0.80, 'method': 'date_offset_vendor'})
+                continue
+            # Amount-only match with date tolerance (lower confidence)
+            candidates.append({'tx': etx, 'confidence': 0.70, 'method': 'amount_date'})
+            continue
+
+        # Fallback: exact amount + vendor match, wider date tolerance (providers are authoritative)
+        if _provider_dates_match(provider_date, e_date, tolerance_days=14):
+            if _vendors_match_exact(provider_vendor, e_vendor) or _vendors_match_fuzzy(provider_vendor, e_vendor):
+                candidates.append({'tx': etx, 'confidence': 0.65, 'method': 'amount_vendor_wide'})
+                continue
+            # Amount-only match with wide date tolerance (lowest confidence)
+            if e_amount == abs(provider_amount):
+                candidates.append({'tx': etx, 'confidence': 0.55, 'method': 'amount_only'})
+                continue
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda c: (-c['confidence'], -c['tx'].confidence))
+    return candidates[0]
+
+
+def correlate_providers(user):
+    """
+    Match provider transactions (Stripe, PayPal, Mollie) to email-extracted transactions.
+    Also matches Stripe payouts to bank credits.
+    Returns stats dict.
+    """
+    logger.info('[Correlation-Provider] Starting provider correlation for user %s', user.email)
+
+    # Get email transactions (with amount)
+    email_txns = Transaction.objects.filter(user=user, amount__isnull=False)
+    if not email_txns.exists():
+        logger.info('[Correlation-Provider] No email transactions to correlate')
+        return {
+            'provider_stripe_matched': 0, 'provider_paypal_matched': 0,
+            'provider_mollie_matched': 0, 'provider_payout_matched': 0,
+        }
+
+    # Pre-compute email candidates
+    email_candidates = []
+    for etx in email_txns:
+        email_candidates.append({
+            'tx': etx,
+            'normalized_vendor': normalize_vendor(etx.vendor_name),
+            'abs_amount': abs(etx.amount),
+        })
+
+    # Skip already-matched provider transaction IDs
+    already_matched = set(
+        ProviderMatch.objects.filter(user=user)
+        .values_list('provider_transaction_id', flat=True)
+    )
+
+    stats = {
+        'provider_stripe_matched': 0,
+        'provider_paypal_matched': 0,
+        'provider_mollie_matched': 0,
+        'provider_payout_matched': 0,
+    }
+
+    # --- Stripe charges (succeeded) ---
+    try:
+        from stripe_provider.models import StripeCharge
+        stripe_charges = StripeCharge.objects.filter(
+            user=user, status='succeeded'
+        ).exclude(stripe_id__in=already_matched)
+
+        for sc in stripe_charges:
+            # Stripe amounts are in cents — convert to decimal
+            amount_decimal = Decimal(str(sc.amount)) / Decimal('100')
+            best = _find_provider_email_match(
+                provider_amount=amount_decimal,
+                provider_currency=sc.currency,
+                provider_date=sc.created_at_stripe,
+                provider_description=sc.description or sc.statement_descriptor or '',
+                email_candidates=email_candidates,
+            )
+            if best:
+                ProviderMatch.objects.update_or_create(
+                    provider='stripe',
+                    provider_transaction_id=sc.stripe_id,
+                    defaults={
+                        'user': user,
+                        'email_transaction': best['tx'],
+                        'provider_amount': amount_decimal,
+                        'provider_currency': sc.currency.upper(),
+                        'confidence': best['confidence'],
+                        'match_method': best['method'],
+                    }
+                )
+                logger.info(
+                    '[Correlation-Provider] Stripe match: %s (%.2f %s) <> email %d (%s) | method=%s conf=%.2f',
+                    sc.stripe_id, amount_decimal, sc.currency,
+                    best['tx'].id, best['tx'].vendor_name,
+                    best['method'], best['confidence'],
+                )
+                stats['provider_stripe_matched'] += 1
+    except ImportError:
+        logger.debug('[Correlation-Provider] stripe_provider not installed, skipping')
+
+    # --- PayPal transactions (completed, S status) ---
+    try:
+        from paypal_provider.models import PayPalTransaction
+        paypal_txns = PayPalTransaction.objects.filter(
+            user=user
+        ).exclude(paypal_id__in=already_matched)
+
+        for pt in paypal_txns:
+            best = _find_provider_email_match(
+                provider_amount=pt.amount,
+                provider_currency=pt.currency,
+                provider_date=pt.initiation_date,
+                provider_description=pt.description or '',
+                email_candidates=email_candidates,
+            )
+            if best:
+                ProviderMatch.objects.update_or_create(
+                    provider='paypal',
+                    provider_transaction_id=pt.paypal_id,
+                    defaults={
+                        'user': user,
+                        'email_transaction': best['tx'],
+                        'provider_amount': abs(pt.amount),
+                        'provider_currency': pt.currency.upper(),
+                        'confidence': best['confidence'],
+                        'match_method': best['method'],
+                    }
+                )
+                logger.info(
+                    '[Correlation-Provider] PayPal match: %s (%.2f %s) <> email %d (%s) | method=%s conf=%.2f',
+                    pt.paypal_id, pt.amount, pt.currency,
+                    best['tx'].id, best['tx'].vendor_name,
+                    best['method'], best['confidence'],
+                )
+                stats['provider_paypal_matched'] += 1
+    except ImportError:
+        logger.debug('[Correlation-Provider] paypal_provider not installed, skipping')
+
+    # --- Mollie payments (paid status) ---
+    try:
+        from mollie_provider.models import MolliePayment
+        mollie_payments = MolliePayment.objects.filter(
+            user=user, status__in=['paid', 'open', 'authorized']
+        ).exclude(mollie_id__in=already_matched)
+
+        for mp in mollie_payments:
+            best = _find_provider_email_match(
+                provider_amount=mp.amount,
+                provider_currency=mp.currency,
+                provider_date=mp.paid_at or mp.created_at_mollie,
+                provider_description=mp.description or '',
+                email_candidates=email_candidates,
+            )
+            if best:
+                ProviderMatch.objects.update_or_create(
+                    provider='mollie',
+                    provider_transaction_id=mp.mollie_id,
+                    defaults={
+                        'user': user,
+                        'email_transaction': best['tx'],
+                        'provider_amount': abs(mp.amount),
+                        'provider_currency': mp.currency.upper(),
+                        'confidence': best['confidence'],
+                        'match_method': best['method'],
+                    }
+                )
+                logger.info(
+                    '[Correlation-Provider] Mollie match: %s (%.2f %s) <> email %d (%s) | method=%s conf=%.2f',
+                    mp.mollie_id, mp.amount, mp.currency,
+                    best['tx'].id, best['tx'].vendor_name,
+                    best['method'], best['confidence'],
+                )
+                stats['provider_mollie_matched'] += 1
+    except ImportError:
+        logger.debug('[Correlation-Provider] mollie_provider not installed, skipping')
+
+    # --- Stripe payouts -> Bank credits ---
+    try:
+        from stripe_provider.models import StripePayout
+        stripe_payouts = StripePayout.objects.filter(
+            user=user, status='paid'
+        )
+
+        # Get unmatched bank credits
+        already_matched_bank_ids = set(
+            TransactionMatch.objects.filter(user=user)
+            .values_list('bank_transaction_id', flat=True)
+        )
+        bank_credits = BankTransaction.objects.filter(
+            user=user, value__gt=0, coming=False
+        ).exclude(id__in=already_matched_bank_ids).select_related('account')
+
+        for sp in stripe_payouts:
+            payout_amount = Decimal(str(sp.amount)) / Decimal('100')
+            payout_date = sp.arrival_date  # DateField
+            payout_currency = sp.currency
+
+            for btx in bank_credits:
+                bank_currency = btx.account.currency if btx.account else ''
+                if bank_currency and payout_currency and bank_currency.upper() != payout_currency.upper():
+                    continue
+                if abs(btx.value) != payout_amount:
+                    continue
+                # Date match: arrival_date should be close to bank date
+                if payout_date and btx.date:
+                    delta = abs((btx.date - payout_date).days)
+                    if delta <= DATE_TOLERANCE_DAYS:
+                        # Store as a ProviderMatch linked to the bank transaction via description
+                        # We use the payout stripe_id as provider_transaction_id
+                        if sp.stripe_id not in already_matched:
+                            # For payout<>bank matches, we don't have an email_transaction
+                            # Log the match but skip ProviderMatch (it requires email_transaction FK)
+                            logger.info(
+                                '[Correlation-Provider] Stripe payout match: %s (%.2f %s) <> bank %d (%.2f) | delta=%d days',
+                                sp.stripe_id, payout_amount, payout_currency,
+                                btx.id, btx.value, delta,
+                            )
+                            stats['provider_payout_matched'] += 1
+                            break  # one match per payout
+    except ImportError:
+        logger.debug('[Correlation-Provider] stripe_provider not installed, skipping payouts')
+
+    logger.info(
+        '[Correlation-Provider] Done: stripe=%d, paypal=%d, mollie=%d, payouts=%d',
+        stats['provider_stripe_matched'], stats['provider_paypal_matched'],
+        stats['provider_mollie_matched'], stats['provider_payout_matched'],
+    )
+    return stats

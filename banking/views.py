@@ -206,9 +206,10 @@ class BankCorrelateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from .services.correlation import correlate_transactions
-        stats = correlate_transactions(request.user)
-        return Response(stats)
+        from .services.correlation import correlate_providers, correlate_transactions
+        bank_stats = correlate_transactions(request.user)
+        provider_stats = correlate_providers(request.user)
+        return Response({**bank_stats, **provider_stats})
 
 
 class BankEnrichView(APIView):

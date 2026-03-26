@@ -138,3 +138,37 @@ class TransactionMatch(models.Model):
 
     def __str__(self):
         return f'Match({self.bank_transaction_id} <> {self.email_transaction_id}, {self.confidence})'
+
+
+class ProviderMatch(models.Model):
+    """Links a provider transaction (Stripe, PayPal, Mollie) to an email transaction."""
+
+    class Status(models.TextChoices):
+        AUTO = 'auto'
+        CONFIRMED = 'confirmed'
+        REJECTED = 'rejected'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='provider_matches'
+    )
+    email_transaction = models.ForeignKey(
+        'emails.Transaction', on_delete=models.CASCADE, related_name='provider_matches'
+    )
+    provider = models.CharField(max_length=20)  # stripe, paypal, mollie
+    provider_transaction_id = models.CharField(max_length=255)  # ID in the provider's system
+    provider_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    provider_currency = models.CharField(max_length=3)
+    confidence = models.FloatField()
+    match_method = models.CharField(max_length=30)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.AUTO)
+    matched_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('provider', 'provider_transaction_id')
+        indexes = [
+            models.Index(fields=['user', 'provider']),
+            models.Index(fields=['email_transaction']),
+        ]
+
+    def __str__(self):
+        return f'ProviderMatch({self.provider}:{self.provider_transaction_id} <> email:{self.email_transaction_id}, {self.confidence})'

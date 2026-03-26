@@ -1469,6 +1469,7 @@ def run_pipeline(user):
     Pass 3: Correlation (Worker + Verifier) -- merge related transactions per vendor
     Pass 4: Computation (pure Python) -- compute derivable tax fields
     Pass 5: Bank Correlation (pure Python) -- match bank debits to email transactions
+    Pass 6: Provider Correlation (pure Python) -- match Stripe/PayPal/Mollie to email transactions
 
     Returns a combined stats dict.
     """
@@ -1501,6 +1502,17 @@ def run_pipeline(user):
         logger.error(f'[Bank-Correlation] Error: {e}')
         bank_correlation_stats = {'bank_matched': 0, 'bank_unmatched': 0, 'bank_total': 0}
 
+    # Pass 6: Provider Correlation (pure Python, no LLM)
+    try:
+        from banking.services.correlation import correlate_providers
+        provider_correlation_stats = correlate_providers(user)
+    except Exception as e:
+        logger.error(f'[Provider-Correlation] Error: {e}')
+        provider_correlation_stats = {
+            'provider_stripe_matched': 0, 'provider_paypal_matched': 0,
+            'provider_mollie_matched': 0, 'provider_payout_matched': 0,
+        }
+
     # Combine all stats
     stats = {
         **triage_stats,
@@ -1508,6 +1520,7 @@ def run_pipeline(user):
         **correlation_stats,
         **computation_stats,
         **bank_correlation_stats,
+        **provider_correlation_stats,
     }
 
     logger.info(f'====== PIPELINE DONE ====== Stats: {json.dumps(stats)}')
