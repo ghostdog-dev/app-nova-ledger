@@ -71,6 +71,14 @@ class BankTransaction(models.Model):
     counterparty_label = models.CharField(max_length=255, blank=True)
     counterparty_iban = models.CharField(max_length=34, blank=True)
     # Metadata
+    # Real/initiation date (e.g. card swipe date, often matches email date)
+    rdate = models.DateField(null=True, blank=True)
+    # Cross-currency original amounts (before conversion to account currency)
+    original_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    original_currency = models.CharField(max_length=3, blank=True)
+    # Powens category
+    category_id = models.IntegerField(null=True, blank=True)
+    # Metadata
     raw_data = models.JSONField(default=dict)  # full Powens response for reference
     created_at = models.DateTimeField(auto_now_add=True)
 

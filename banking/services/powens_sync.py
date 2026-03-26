@@ -144,6 +144,10 @@ def sync_bank_data(user, days=90):
                     'card': txn.get('card') or '',
                     'counterparty_label': _get_nested(txn, 'counterparty', 'label'),
                     'counterparty_iban': _get_nested(txn, 'counterparty', 'iban'),
+                    'rdate': txn.get('rdate'),
+                    'original_value': Decimal(str(txn['original_value'])) if txn.get('original_value') is not None else None,
+                    'original_currency': txn.get('original_currency', {}).get('id', '') if isinstance(txn.get('original_currency'), dict) else '',
+                    'category_id': txn.get('id_category'),
                     'raw_data': txn,
                 },
             )

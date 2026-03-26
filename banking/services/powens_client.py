@@ -83,7 +83,7 @@ class PowensClient:
     # --- Transactions ---
 
     def list_transactions(self, account_id=None, min_date=None, max_date=None, limit=1000):
-        params = {'limit': limit}
+        params = {'limit': limit, 'expand': 'categories'}
         if min_date:
             params['min_date'] = min_date
         if max_date:

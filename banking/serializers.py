@@ -40,7 +40,8 @@ class BankTransactionSerializer(serializers.ModelSerializer):
         model = BankTransaction
         fields = [
             'id', 'powens_transaction_id', 'account_id', 'account_name',
-            'date', 'value', 'currency',
+            'date', 'rdate', 'value', 'currency',
+            'original_value', 'original_currency', 'category_id',
             'original_wording', 'simplified_wording',
             'transaction_type', 'coming', 'card',
             'counterparty_label', 'counterparty_iban',
