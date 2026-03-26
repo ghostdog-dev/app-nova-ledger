@@ -1468,6 +1468,7 @@ def run_pipeline(user):
     Pass 2: Extraction (Worker + Verifier) -- extract structured data with tool_use
     Pass 3: Correlation (Worker + Verifier) -- merge related transactions per vendor
     Pass 4: Computation (pure Python) -- compute derivable tax fields
+    Pass 5: Bank Correlation (pure Python) -- match bank debits to email transactions
 
     Returns a combined stats dict.
     """
@@ -1492,12 +1493,21 @@ def run_pipeline(user):
     # Pass 4: Computation (pure Python, no LLM)
     computation_stats = _run_computation_pass(user)
 
+    # Pass 5: Bank Correlation (pure Python, no LLM)
+    try:
+        from banking.services.correlation import correlate_transactions
+        bank_correlation_stats = correlate_transactions(user)
+    except Exception as e:
+        logger.error(f'[Bank-Correlation] Error: {e}')
+        bank_correlation_stats = {'bank_matched': 0, 'bank_unmatched': 0, 'bank_total': 0}
+
     # Combine all stats
     stats = {
         **triage_stats,
         **extraction_stats,
         **correlation_stats,
         **computation_stats,
+        **bank_correlation_stats,
     }
 
     logger.info(f'====== PIPELINE DONE ====== Stats: {json.dumps(stats)}')

@@ -8,5 +8,6 @@ urlpatterns = [
     path('sync/', views.BankSyncView.as_view(), name='bank-sync'),
     path('accounts/', views.BankAccountsView.as_view(), name='bank-accounts'),
     path('transactions/', views.BankTransactionsView.as_view(), name='bank-transactions'),
+    path('correlate/', views.BankCorrelateView.as_view(), name='bank-correlate'),
     path('disconnect/<int:connection_id>/', views.BankDisconnectView.as_view(), name='bank-disconnect'),
 ]

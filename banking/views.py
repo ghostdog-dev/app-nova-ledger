@@ -201,6 +201,16 @@ class BankTransactionsView(APIView):
         return Response(serializer.data)
 
 
+class BankCorrelateView(APIView):
+    """Trigger bank-email transaction correlation."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .services.correlation import correlate_transactions
+        stats = correlate_transactions(request.user)
+        return Response(stats)
+
+
 class BankDisconnectView(APIView):
     """Disconnect a bank connection."""
     permission_classes = [IsAuthenticated]

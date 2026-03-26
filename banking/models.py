@@ -84,6 +84,48 @@ class BankTransaction(models.Model):
 
     class Meta:
         ordering = ['-date']
+        indexes = [
+            models.Index(fields=['user', 'date']),
+        ]
 
     def __str__(self):
         return f'BankTransaction({self.original_wording}, {self.value})'
+
+
+class TransactionMatch(models.Model):
+    """Links a bank transaction to an email-extracted transaction."""
+
+    class MatchMethod(models.TextChoices):
+        EXACT = 'exact'
+        FUZZY_VENDOR = 'fuzzy_vendor'
+        DATE_OFFSET = 'date_offset'
+        CROSS_CURRENCY = 'cross_currency'
+        REFERENCE = 'reference'
+
+    class Status(models.TextChoices):
+        AUTO = 'auto'
+        CONFIRMED = 'confirmed'
+        REJECTED = 'rejected'
+
+    bank_transaction = models.OneToOneField(
+        BankTransaction, on_delete=models.CASCADE, related_name='match'
+    )
+    email_transaction = models.ForeignKey(
+        'emails.Transaction', on_delete=models.CASCADE, related_name='bank_matches'
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transaction_matches'
+    )
+    confidence = models.FloatField()
+    match_method = models.CharField(max_length=20, choices=MatchMethod.choices)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.AUTO)
+    matched_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['email_transaction']),
+        ]
+
+    def __str__(self):
+        return f'Match({self.bank_transaction_id} <> {self.email_transaction_id}, {self.confidence})'
