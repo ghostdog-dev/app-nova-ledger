@@ -33,14 +33,21 @@ class MollieConnectView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Verify key by calling /v2/organizations/me
+        # Verify key — use /v2/methods (works in test mode) or /v2/organizations/me (live only)
         org_id = ''
         org_name = ''
         try:
             client = MollieClient(api_key)
-            org_data = client.get_organization()
-            org_id = org_data.get('id', '')
-            org_name = org_data.get('name', '')
+            if api_key.startswith('live_'):
+                org_data = client.get_organization()
+                org_id = org_data.get('id', '')
+                org_name = org_data.get('name', '')
+            else:
+                # Test mode: /v2/organizations/me doesn't work, use /v2/methods to verify key
+                resp = client.client.get('/methods')
+                resp.raise_for_status()
+                methods = resp.json()
+                org_name = f'Test account ({methods.get("count", 0)} payment methods)'
             client.close()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:

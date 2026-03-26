@@ -48,11 +48,13 @@ class StripeConnectView(APIView):
             account = stripe_lib.Account.retrieve(api_key=api_key)
             account_id = account.id
             name = ''
-            if hasattr(account, 'business_profile') and account.business_profile:
-                name = account.business_profile.get('name', '') or ''
-            if not name and hasattr(account, 'settings') and account.settings:
-                dashboard = account.settings.get('dashboard', {}) or {}
-                name = dashboard.get('display_name', '') or ''
+            try:
+                if account.business_profile and account.business_profile.name:
+                    name = account.business_profile.name
+                if not name and account.settings and account.settings.dashboard:
+                    name = account.settings.dashboard.display_name or ''
+            except (AttributeError, KeyError):
+                pass
 
             StripeConnection.objects.update_or_create(
                 user=request.user,
