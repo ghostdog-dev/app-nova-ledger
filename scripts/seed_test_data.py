@@ -56,7 +56,7 @@ def seed_stripe():
                 payment_method=c['method'],
                 confirm=True,
                 description=c['desc'],
-                automatic_payment_methods={'enabled': False, 'allow_redirects': 'never'},
+                payment_method_types=['card'],
             )
             status = pi.status
             print(f'  Charge {c["amount"]/100:.2f} {c["currency"].upper()} "{c["desc"]}" → {status}')

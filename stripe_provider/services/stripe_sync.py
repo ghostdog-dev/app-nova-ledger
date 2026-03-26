@@ -45,6 +45,15 @@ def _paginate(list_method, **params):
     return all_items
 
 
+def _g(obj, attr, default=''):
+    """Safe getattr for Stripe objects — avoids AttributeError on missing fields."""
+    try:
+        val = getattr(obj, attr, default)
+        return val if val is not None else default
+    except (AttributeError, KeyError):
+        return default
+
+
 def sync_balance_transactions(user, connection, access_token, created_gte=None):
     """Fetch and store Stripe balance transactions."""
     params = {'api_key': access_token, 'limit': 100}
@@ -54,24 +63,28 @@ def sync_balance_transactions(user, connection, access_token, created_gte=None):
     created = 0
 
     for item in items:
+        d = item.to_dict()  # Convert Stripe object to plain dict
+        source = d.get('source', '')
+        source_id = source if isinstance(source, str) else (source.get('id', '') if isinstance(source, dict) else '')
+
         _, was_created = StripeBalanceTransaction.objects.update_or_create(
-            stripe_id=item.id,
+            stripe_id=d.get('id'),
             defaults={
                 'user': user,
                 'connection': connection,
-                'amount': item.amount,
-                'currency': item.currency,
-                'fee': item.fee,
-                'net': item.net,
-                'type': item.type,
-                'status': item.status,
-                'description': item.description or '',
-                'source_id': item.source if isinstance(item.source, str) else (item.source.id if item.source else ''),
-                'source_type': item.type,
-                'created_at_stripe': _ts_to_dt(item.created),
-                'available_on': _ts_to_dt(item.available_on),
-                'exchange_rate': item.exchange_rate,
-                'raw_data': dict(item),
+                'amount': d.get('amount', 0),
+                'currency': d.get('currency', ''),
+                'fee': d.get('fee', 0),
+                'net': d.get('net', 0),
+                'type': d.get('type', ''),
+                'status': d.get('status', ''),
+                'description': d.get('description', '') or '',
+                'source_id': source_id,
+                'source_type': d.get('type', ''),
+                'created_at_stripe': _ts_to_dt(d.get('created')),
+                'available_on': _ts_to_dt(d.get('available_on')),
+                'exchange_rate': d.get('exchange_rate', None),
+                'raw_data': d,
             },
         )
         if was_created:
@@ -90,39 +103,55 @@ def sync_charges(user, connection, access_token, created_gte=None):
     created = 0
 
     for item in items:
+        d = item.to_dict()  # Convert Stripe object to plain dict
+
         # Extract payment method details
-        pm = item.payment_method_details or {}
-        card_info = pm.get('card', {}) or {}
+        pm = d.get('payment_method_details') or {}
+        if not isinstance(pm, dict):
+            pm = dict(pm) if pm else {}
+        card_info = pm.get('card') or {}
+        if not isinstance(card_info, dict):
+            card_info = dict(card_info) if card_info else {}
+
+        # Extract billing details
+        bd = d.get('billing_details') or {}
+        if not isinstance(bd, dict):
+            bd = dict(bd) if bd else {}
+
+        # Extract metadata
+        meta = d.get('metadata') or {}
+        if not isinstance(meta, dict):
+            meta = dict(meta) if meta else {}
 
         _, was_created = StripeCharge.objects.update_or_create(
-            stripe_id=item.id,
+            stripe_id=d.get('id'),
             defaults={
                 'user': user,
                 'connection': connection,
-                'amount': item.amount,
-                'amount_captured': item.amount_captured or 0,
-                'amount_refunded': item.amount_refunded or 0,
-                'currency': item.currency,
-                'status': item.status,
-                'paid': item.paid,
-                'refunded': item.refunded,
-                'disputed': item.disputed,
-                'description': item.description or '',
-                'statement_descriptor': item.statement_descriptor or '',
-                'customer_id': item.customer or '',
-                'customer_email': (item.billing_details or {}).get('email', '') or '',
-                'customer_name': (item.billing_details or {}).get('name', '') or '',
+                'amount': d.get('amount', 0),
+                'amount_captured': d.get('amount_captured', 0) or 0,
+                'amount_refunded': d.get('amount_refunded', 0) or 0,
+                'currency': d.get('currency', ''),
+                'status': d.get('status', ''),
+                'paid': d.get('paid', False),
+                'refunded': d.get('refunded', False),
+                'disputed': d.get('disputed', False),
+                'description': d.get('description', '') or '',
+                'statement_descriptor': d.get('statement_descriptor', '') or '',
+                'customer_id': d.get('customer', '') or '',
+                'customer_email': bd.get('email', '') or '',
+                'customer_name': bd.get('name', '') or '',
                 'payment_method_type': pm.get('type', ''),
                 'card_brand': card_info.get('brand', ''),
                 'card_last4': card_info.get('last4', ''),
                 'card_country': card_info.get('country', ''),
-                'invoice_id': item.invoice or '',
-                'receipt_url': item.receipt_url or '',
-                'failure_code': item.failure_code or '',
-                'failure_message': item.failure_message or '',
-                'metadata': dict(item.metadata) if item.metadata else {},
-                'raw_data': dict(item),
-                'created_at_stripe': _ts_to_dt(item.created),
+                'invoice_id': d.get('invoice', '') or '',
+                'receipt_url': d.get('receipt_url', '') or '',
+                'failure_code': d.get('failure_code', '') or '',
+                'failure_message': d.get('failure_message', '') or '',
+                'metadata': meta,
+                'raw_data': d,
+                'created_at_stripe': _ts_to_dt(d.get('created')),
             },
         )
         if was_created:
@@ -141,23 +170,26 @@ def sync_payouts(user, connection, access_token, created_gte=None):
     created = 0
 
     for item in items:
+        d = item.to_dict()  # Convert Stripe object to plain dict
+        arrival = d.get('arrival_date')
+
         _, was_created = StripePayout.objects.update_or_create(
-            stripe_id=item.id,
+            stripe_id=d.get('id'),
             defaults={
                 'user': user,
                 'connection': connection,
-                'amount': item.amount,
-                'currency': item.currency,
-                'status': item.status,
-                'arrival_date': _ts_to_dt(item.arrival_date).date() if item.arrival_date else None,
-                'method': item.method or '',
-                'destination_type': item.type or '',
+                'amount': d.get('amount', 0),
+                'currency': d.get('currency', ''),
+                'status': d.get('status', ''),
+                'arrival_date': _ts_to_dt(arrival).date() if arrival else None,
+                'method': d.get('method', '') or '',
+                'destination_type': d.get('type', '') or '',
                 'bank_account_last4': '',  # populated below
-                'automatic': item.automatic if item.automatic is not None else True,
-                'failure_code': item.failure_code or '',
-                'failure_message': item.failure_message or '',
-                'raw_data': dict(item),
-                'created_at_stripe': _ts_to_dt(item.created),
+                'automatic': d.get('automatic', True) if d.get('automatic') is not None else True,
+                'failure_code': d.get('failure_code', '') or '',
+                'failure_message': d.get('failure_message', '') or '',
+                'raw_data': d,
+                'created_at_stripe': _ts_to_dt(d.get('created')),
             },
         )
         if was_created:
@@ -176,45 +208,58 @@ def sync_invoices(user, connection, access_token, created_gte=None):
     created = 0
 
     for item in items:
+        d = item.to_dict()  # Convert Stripe object to plain dict
+
         # Extract line items
         line_items_data = []
-        if item.lines and item.lines.data:
-            for line in item.lines.data:
+        lines = d.get('lines')
+        if lines:
+            lines_data = lines.get('data', []) if isinstance(lines, dict) else getattr(lines, 'data', [])
+            for line in lines_data:
+                ld = dict(line) if not isinstance(line, dict) else line
+                period = ld.get('period')
+                if period and not isinstance(period, dict):
+                    period = dict(period)
                 line_items_data.append({
-                    'description': line.description or '',
-                    'amount': line.amount,
-                    'quantity': line.quantity,
+                    'description': ld.get('description', '') or '',
+                    'amount': ld.get('amount', 0),
+                    'quantity': ld.get('quantity', 0),
                     'period': {
-                        'start': line.period.start if line.period else None,
-                        'end': line.period.end if line.period else None,
-                    } if line.period else None,
+                        'start': period.get('start') if period else None,
+                        'end': period.get('end') if period else None,
+                    } if period else None,
                 })
 
+        # Extract status_transitions
+        st = d.get('status_transitions') or {}
+        if not isinstance(st, dict):
+            st = dict(st) if st else {}
+
         _, was_created = StripeInvoice.objects.update_or_create(
-            stripe_id=item.id,
+            stripe_id=d.get('id'),
             defaults={
                 'user': user,
                 'connection': connection,
-                'number': item.number or '',
-                'status': item.status or '',
-                'amount_due': item.amount_due or 0,
-                'amount_paid': item.amount_paid or 0,
-                'amount_remaining': item.amount_remaining or 0,
-                'subtotal': item.subtotal or 0,
-                'tax': item.tax,
-                'total': item.total or 0,
-                'currency': item.currency or '',
-                'customer_id': item.customer or '',
-                'customer_email': item.customer_email or '',
-                'customer_name': item.customer_name or '',
-                'invoice_date': _ts_to_dt(item.created),
-                'due_date': _ts_to_dt(item.due_date),
-                'paid_at': _ts_to_dt(item.status_transitions.paid_at) if item.status_transitions else None,
-                'subscription_id': item.subscription or '',
-                'hosted_invoice_url': item.hosted_invoice_url or '',
-                'invoice_pdf': item.invoice_pdf or '',
+                'number': d.get('number', '') or '',
+                'status': d.get('status', '') or '',
+                'amount_due': d.get('amount_due', 0) or 0,
+                'amount_paid': d.get('amount_paid', 0) or 0,
+                'amount_remaining': d.get('amount_remaining', 0) or 0,
+                'subtotal': d.get('subtotal', 0) or 0,
+                'tax': d.get('tax', 0) or 0,
+                'total': d.get('total', 0) or 0,
+                'currency': d.get('currency', '') or '',
+                'customer_id': d.get('customer', '') or '',
+                'customer_email': d.get('customer_email', '') or '',
+                'customer_name': d.get('customer_name', '') or '',
+                'invoice_date': _ts_to_dt(d.get('created')),
+                'due_date': _ts_to_dt(d.get('due_date')),
+                'paid_at': _ts_to_dt(st.get('paid_at')),
+                'subscription_id': d.get('subscription', '') or '',
+                'hosted_invoice_url': d.get('hosted_invoice_url', '') or '',
+                'invoice_pdf': d.get('invoice_pdf', '') or '',
                 'line_items': line_items_data,
-                'raw_data': dict(item),
+                'raw_data': d,
             },
         )
         if was_created:
@@ -233,6 +278,8 @@ def sync_subscriptions(user, connection, access_token, created_gte=None):
     created = 0
 
     for item in items:
+        d = item.to_dict()  # Convert Stripe object to plain dict
+
         # Get plan details from the first item
         plan_amount = 0
         plan_currency = ''
@@ -240,41 +287,53 @@ def sync_subscriptions(user, connection, access_token, created_gte=None):
         plan_interval_count = 1
         plan_product_name = ''
 
-        if item.items and item.items.data:
-            si = item.items.data[0]
-            if si.price:
-                plan_amount = si.price.unit_amount or 0
-                plan_currency = si.price.currency or ''
-                plan_interval = si.price.recurring.interval if si.price.recurring else ''
-                plan_interval_count = si.price.recurring.interval_count if si.price.recurring else 1
-            if si.price and si.price.product:
-                # product might be expanded or just an ID
-                if isinstance(si.price.product, str):
-                    plan_product_name = si.price.product
-                else:
-                    plan_product_name = getattr(si.price.product, 'name', '')
+        sub_items = d.get('items')
+        if sub_items:
+            sub_items_data = sub_items.get('data', []) if isinstance(sub_items, dict) else getattr(sub_items, 'data', [])
+            if sub_items_data:
+                si = sub_items_data[0]
+                if not isinstance(si, dict):
+                    si = dict(si)
+                price = si.get('price') or {}
+                if not isinstance(price, dict):
+                    price = dict(price)
+                if price:
+                    plan_amount = price.get('unit_amount', 0) or 0
+                    plan_currency = price.get('currency', '') or ''
+                    recurring = price.get('recurring') or {}
+                    if not isinstance(recurring, dict):
+                        recurring = dict(recurring) if recurring else {}
+                    plan_interval = recurring.get('interval', '') if recurring else ''
+                    plan_interval_count = recurring.get('interval_count', 1) if recurring else 1
+                    product = price.get('product')
+                    if isinstance(product, str):
+                        plan_product_name = product
+                    elif isinstance(product, dict):
+                        plan_product_name = product.get('name', '')
+                    elif product:
+                        plan_product_name = getattr(product, 'name', '')
 
         _, was_created = StripeSubscription.objects.update_or_create(
-            stripe_id=item.id,
+            stripe_id=d.get('id'),
             defaults={
                 'user': user,
                 'connection': connection,
-                'status': item.status,
-                'customer_id': item.customer or '',
+                'status': d.get('status', ''),
+                'customer_id': d.get('customer', '') or '',
                 'customer_email': '',  # not directly on subscription
                 'plan_amount': plan_amount,
                 'plan_currency': plan_currency,
                 'plan_interval': plan_interval,
                 'plan_interval_count': plan_interval_count,
                 'plan_product_name': plan_product_name,
-                'current_period_start': _ts_to_dt(item.current_period_start),
-                'current_period_end': _ts_to_dt(item.current_period_end),
-                'cancel_at_period_end': item.cancel_at_period_end or False,
-                'canceled_at': _ts_to_dt(item.canceled_at),
-                'trial_start': _ts_to_dt(item.trial_start),
-                'trial_end': _ts_to_dt(item.trial_end),
-                'raw_data': dict(item),
-                'created_at_stripe': _ts_to_dt(item.created),
+                'current_period_start': _ts_to_dt(d.get('current_period_start')),
+                'current_period_end': _ts_to_dt(d.get('current_period_end')),
+                'cancel_at_period_end': d.get('cancel_at_period_end', False) or False,
+                'canceled_at': _ts_to_dt(d.get('canceled_at')),
+                'trial_start': _ts_to_dt(d.get('trial_start')),
+                'trial_end': _ts_to_dt(d.get('trial_end')),
+                'raw_data': d,
+                'created_at_stripe': _ts_to_dt(d.get('created')),
             },
         )
         if was_created:
@@ -293,19 +352,21 @@ def sync_disputes(user, connection, access_token, created_gte=None):
     created = 0
 
     for item in items:
+        d = item.to_dict()  # Convert Stripe object to plain dict
+
         _, was_created = StripeDispute.objects.update_or_create(
-            stripe_id=item.id,
+            stripe_id=d.get('id'),
             defaults={
                 'user': user,
                 'connection': connection,
-                'charge_id': item.charge or '',
-                'amount': item.amount,
-                'currency': item.currency,
-                'status': item.status,
-                'reason': item.reason or '',
-                'evidence_due_by': _ts_to_dt(item.evidence_due_by),
-                'raw_data': dict(item),
-                'created_at_stripe': _ts_to_dt(item.created),
+                'charge_id': d.get('charge', '') or '',
+                'amount': d.get('amount', 0),
+                'currency': d.get('currency', ''),
+                'status': d.get('status', ''),
+                'reason': d.get('reason', '') or '',
+                'evidence_due_by': _ts_to_dt(d.get('evidence_due_by')),
+                'raw_data': d,
+                'created_at_stripe': _ts_to_dt(d.get('created')),
             },
         )
         if was_created:
