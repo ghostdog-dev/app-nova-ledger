@@ -37,5 +37,5 @@ urlpatterns = [
     path('callback/powens/', BankCallbackView.as_view(), name='powens-callback'),
 
     # Catch-all: serve React frontend for all non-API routes
-    re_path(r'^(?!api/|admin/|financial/|callback/).*', include('frontend.urls')),
+    re_path(r'^(?!api/|admin/|financial/|callback/)', include('frontend.urls')),
 ]

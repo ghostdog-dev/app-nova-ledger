@@ -20,7 +20,15 @@ def index_view(request):
 
 def static_asset_view(request, path):
     """Serve Vite build assets (JS, CSS, images)."""
-    file_path = os.path.join(settings.BASE_DIR, 'frontend', 'static', 'frontend', path)
+    file_path = os.path.join(settings.BASE_DIR, 'frontend', 'static', 'frontend', 'assets', path)
+    if os.path.exists(file_path):
+        return FileResponse(open(file_path, 'rb'))
+    raise Http404
+
+
+def static_root_file_view(request, filename):
+    """Serve static files at the root of the build (vite.svg, favicon, etc.)."""
+    file_path = os.path.join(settings.BASE_DIR, 'frontend', 'static', 'frontend', filename)
     if os.path.exists(file_path):
         return FileResponse(open(file_path, 'rb'))
     raise Http404
