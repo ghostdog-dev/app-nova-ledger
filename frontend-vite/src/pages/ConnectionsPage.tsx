@@ -18,6 +18,7 @@ const FILTER_TABS: { value: FilterTab; labelKey: string }[] = [
   { value: 'invoicing', labelKey: 'connections.filterInvoicing' },
   { value: 'payment', labelKey: 'connections.filterPayment' },
   { value: 'email', labelKey: 'connections.filterEmail' },
+  { value: 'banking', labelKey: 'connections.filterBanking' },
 ];
 
 export default function ConnectionsPage() {
@@ -141,7 +142,7 @@ export default function ConnectionsPage() {
               Services par type
             </p>
             <div className={styles.breakdownGrid}>
-              {(['invoicing', 'payment', 'email'] as ServiceType[]).map((type) => {
+              {(['invoicing', 'payment', 'email', 'banking'] as ServiceType[]).map((type) => {
                 const count = connections.filter((c) => c.serviceType === type).length;
                 return (
                   <div key={type}>

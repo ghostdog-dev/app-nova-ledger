@@ -1,6 +1,6 @@
 import type { ServiceType } from '@/types';
 
-export type AuthMethod = 'oauth' | 'apikey' | 'both';
+export type AuthMethod = 'oauth' | 'apikey' | 'both' | 'file_upload';
 
 export interface ServiceDefinition {
   id: string;
@@ -182,6 +182,27 @@ export const SERVICES_CATALOG: ServiceDefinition[] = [
     initials: 'WC',
     description: 'Commandes et paiements e-commerce',
     credentialFields: ['shop_url', 'consumer_key', 'consumer_secret'],
+  },
+
+  // ── Banking ─────────────────────────────────────────────
+  {
+    id: 'stripe_financial',
+    name: 'Stripe Financial Connections',
+    type: 'banking',
+    authMethod: 'apikey',
+    color: '#635BFF',
+    initials: 'SF',
+    description: 'Connexion bancaire via Stripe (relevés automatiques)',
+    credentialFields: ['api_key'],
+  },
+  {
+    id: 'bank_import',
+    name: 'Import relevé bancaire',
+    type: 'banking',
+    authMethod: 'file_upload',
+    color: '#10B981',
+    initials: 'CSV',
+    description: 'Importez un fichier CSV, OFX ou XML de votre banque',
   },
 
   // ── Email ────────────────────────────────────────────────

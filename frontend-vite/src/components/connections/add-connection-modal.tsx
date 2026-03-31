@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, ChevronRight, CheckCircle, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,7 @@ const SERVICE_TYPE_OPTIONS: { type: ServiceType; emoji: string; descriptionKey: 
   { type: 'invoicing', emoji: '\uD83E\uDDFE', descriptionKey: 'Pennylane, Sellsy, QuickBooks\u2026' },
   { type: 'payment', emoji: '\uD83D\uDCB3', descriptionKey: 'Stripe, GoCardless, PayPal\u2026' },
   { type: 'email', emoji: '\uD83D\uDCE7', descriptionKey: 'Gmail, Outlook' },
+  { type: 'banking', emoji: '\uD83C\uDFE6', descriptionKey: 'Stripe Financial, Import CSV/OFX…' },
 ];
 
 export function AddConnectionModal({ open, onClose, onSuccess }: AddConnectionModalProps) {
@@ -46,6 +47,9 @@ export function AddConnectionModal({ open, onClose, onSuccess }: AddConnectionMo
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadResult, setUploadResult] = useState<{rowsImported: number; bankName: string} | null>(null);
 
   // Reset on open
   useEffect(() => {
@@ -57,6 +61,8 @@ export function AddConnectionModal({ open, onClose, onSuccess }: AddConnectionMo
       setCredentialErrors({});
       setError(null);
       setSearchQuery('');
+      setSelectedFile(null);
+      setUploadResult(null);
       setTimeout(() => firstFocusRef.current?.focus(), 50);
     }
   }, [open]);
@@ -136,6 +142,46 @@ export function AddConnectionModal({ open, onClose, onSuccess }: AddConnectionMo
       onSuccess(selectedService.id);
     } catch {
       setError(t('errors.unknown'));
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const handleFileUpload = async () => {
+    if (!selectedFile) return;
+    setIsConnecting(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      // Get company ID and token
+      const { useCompanyStore } = await import('@/stores/company-store');
+      const activeCompany = useCompanyStore.getState().activeCompany;
+      if (!activeCompany) throw new Error('No active company');
+
+      const { getStoredAccessToken } = await import('@/lib/api-client');
+      const token = getStoredAccessToken();
+
+      const apiBase = import.meta.env.VITE_API_URL ?? '/api/v1';
+      const resp = await fetch(`${apiBase}/companies/${activeCompany.publicId}/bank-import/upload/`, {
+        method: 'POST',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        credentials: 'include',
+        body: formData,
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || err.detail || `Upload failed (${resp.status})`);
+      }
+
+      const result = await resp.json();
+      setUploadResult({ rowsImported: result.rowsImported ?? result.rows_imported ?? 0, bankName: result.bankName ?? result.bank_name ?? '' });
+      setStep('success');
+      onSuccess('bank_import');
+    } catch (e: any) {
+      setError(e.message || 'Erreur lors de l\'import');
     } finally {
       setIsConnecting(false);
     }
@@ -349,6 +395,54 @@ export function AddConnectionModal({ open, onClose, onSuccess }: AddConnectionMo
                   >
                     {t('connections.addModal.connectApiKey')}
                   </Button>
+                </div>
+              )}
+
+              {selectedService.authMethod === 'file_upload' && (
+                <div className={styles.apiKeyGroup}>
+                  <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '0.75rem' }}>
+                    Importez votre relev\u00e9 bancaire (CSV, OFX, QFX ou XML)
+                  </p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv,.ofx,.qfx,.xml"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) setSelectedFile(e.target.files[0]);
+                    }}
+                  />
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{
+                      border: '2px dashed rgba(255,255,255,0.2)',
+                      borderRadius: '0.75rem',
+                      padding: '2rem',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      marginBottom: '1rem',
+                    }}
+                  >
+                    {selectedFile ? (
+                      <p style={{ color: '#10B981' }}>{'\u2713'} {selectedFile.name}</p>
+                    ) : (
+                      <p style={{ opacity: 0.6 }}>Cliquez ou glissez un fichier ici</p>
+                    )}
+                  </div>
+                  {selectedFile && (
+                    <Button
+                      fullWidth
+                      isLoading={isConnecting}
+                      onClick={handleFileUpload}
+                    >
+                      Importer {selectedFile.name}
+                    </Button>
+                  )}
+                  {uploadResult && (
+                    <Alert variant="success" style={{ marginTop: '0.75rem' }}>
+                      {uploadResult.rowsImported} lignes import\u00e9es{uploadResult.bankName ? ` (${uploadResult.bankName})` : ''}
+                    </Alert>
+                  )}
                 </div>
               )}
             </div>
