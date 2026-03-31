@@ -87,7 +87,7 @@ export function AddConnectionModal({ open, onClose, onSuccess }: AddConnectionMo
     setIsConnecting(true);
     setError(null);
     try {
-      const redirectUri = `${window.location.origin}/connections/oauth/callback`;
+      const redirectUri = `${window.location.origin}/auth/callback`;
       const { authorizationUrl, state } = await initiateOAuth(selectedService.id, redirectUri);
 
       // Store state + provider in sessionStorage for CSRF validation on callback
