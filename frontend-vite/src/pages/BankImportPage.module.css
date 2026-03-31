@@ -1,0 +1,345 @@
+/* ============================================================
+   Bank Import Page — Upload zone + import history
+   ============================================================ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* --- Page header --- */
+
+.pageHeaderRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 1rem;
+}
+
+.title {
+  font-family: var(--font-heading);
+  font-size: 1.75rem;
+  font-weight: 500;
+  font-style: italic;
+  color: var(--color-text);
+}
+
+.subtitle {
+  margin-top: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* --- Upload zone --- */
+
+.uploadZone {
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 0.5rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+  background: transparent;
+}
+
+.uploadZone:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+  background-color: var(--color-bg-hover);
+}
+
+.uploadZoneActive {
+  border-color: #635BFF;
+  background-color: rgba(99, 91, 255, 0.05);
+}
+
+.uploadIcon {
+  color: var(--color-text-light);
+  margin-bottom: 0.75rem;
+}
+
+.uploadTitle {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 0.25rem;
+}
+
+.uploadHint {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.uploadLoading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 3rem 1.5rem;
+  color: var(--color-text-light);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+/* --- Result card --- */
+
+.resultCard {
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.resultHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.resultSuccess {
+  color: var(--color-success);
+}
+
+.resultError {
+  color: var(--color-error);
+}
+
+.resultStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+}
+
+.resultStat {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.resultStat strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.resultWarnings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.resultWarning {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-warning);
+}
+
+.dismissBtn {
+  align-self: flex-end;
+  background: none;
+  border: 1px solid var(--color-border-light);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.75rem;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.dismissBtn:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-muted);
+}
+
+/* --- History table --- */
+
+.tableContainer {
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+  overflow: hidden;
+}
+
+.tableToolbar {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border-light);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.badge {
+  font-family: var(--font-mono);
+  color: var(--color-success);
+  background-color: var(--color-bg-elevated);
+  padding: 0.125rem 0.5rem;
+  font-size: 0.625rem;
+  line-height: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.tableTitle {
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  line-height: 1.3;
+  color: var(--color-text);
+  font-weight: 600;
+  font-style: italic;
+}
+
+.historyTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.historyTable th {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border-light);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  line-height: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-light);
+  text-align: left;
+  font-weight: 400;
+}
+
+.historyTable td {
+  padding: 0.625rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.historyTable tr:hover td {
+  background-color: var(--color-bg-hover);
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  border: 1px solid;
+}
+
+.badgeImported {
+  background-color: var(--color-success-bg);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.badgeFailed {
+  background-color: var(--color-error-bg);
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.badgeProcessing {
+  background-color: var(--color-warning-bg);
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+/* --- Empty / Loading states --- */
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 0;
+  color: var(--color-text-light);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  animation: spin 1s linear infinite;
+  margin-right: 0.5rem;
+}
+
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+.emptyRow {
+  text-align: center;
+  opacity: 0.5;
+  color: var(--color-text-light);
+  padding: 2rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+/* ============================================================
+   Tablet (640px+)
+   ============================================================ */
+
+@media (min-width: 640px) {
+  .page {
+    gap: 1.5rem;
+  }
+
+  .pageHeaderRow {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding-bottom: 1.5rem;
+  }
+
+  .title {
+    font-size: 2.25rem;
+  }
+
+  .tableToolbar {
+    padding: 1rem 1.5rem;
+  }
+
+  .tableTitle {
+    font-size: 1.25rem;
+  }
+
+  .historyTable th {
+    padding: 0.75rem 1.5rem;
+  }
+
+  .historyTable td {
+    padding: 0.625rem 1.5rem;
+  }
+}
+
+/* ============================================================
+   Desktop (1024px+)
+   ============================================================ */
+
+@media (min-width: 1024px) {
+  .title {
+    font-size: 2.5rem;
+  }
+
+  .uploadZone {
+    padding: 4rem 2rem;
+  }
+}
