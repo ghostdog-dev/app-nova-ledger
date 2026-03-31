@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'choruspro_provider',
     'ai_agent',
     'core',
+    'frontend',
 ]
 
 SITE_ID = 1

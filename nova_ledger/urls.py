@@ -1,12 +1,15 @@
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 
-from accounts.views import callback_page, login_page, session_login_view
 from banking.views import BankCallbackView
-from emails.views import test_page as emails_test_page
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    # API v1 — unified API for the React frontend
+    path('api/v1/', include('core.urls')),
+
+    # Legacy provider APIs — used internally by core views
     path('api/auth/', include('dj_rest_auth.urls')),
     path('api/auth/registration/', include('dj_rest_auth.registration.urls')),
     path('api/auth/', include('accounts.urls')),
@@ -15,9 +18,24 @@ urlpatterns = [
     path('api/paypal/', include('paypal_provider.urls')),
     path('api/stripe/', include('stripe_provider.urls')),
     path('api/mollie/', include('mollie_provider.urls')),
+    path('api/fintecture/', include('fintecture_provider.urls')),
+    path('api/gocardless/', include('gocardless_provider.urls')),
+    path('api/payplug/', include('payplug_provider.urls')),
+    path('api/sumup/', include('sumup_provider.urls')),
+    path('api/bank-import/', include('bank_import.urls')),
+    path('api/evoliz/', include('evoliz_provider.urls')),
+    path('api/pennylane/', include('pennylane_provider.urls')),
+    path('api/vosfactures/', include('vosfactures_provider.urls')),
+    path('api/qonto/', include('qonto_provider.urls')),
+    path('api/shopify/', include('shopify_provider.urls')),
+    path('api/prestashop/', include('prestashop_provider.urls')),
+    path('api/woocommerce/', include('woocommerce_provider.urls')),
+    path('api/alma/', include('alma_provider.urls')),
+    path('api/choruspro/', include('choruspro_provider.urls')),
+    path('api/ai/', include('ai_agent.urls')),
+    path('financial/', include('stripe_financial.urls')),
     path('callback/powens/', BankCallbackView.as_view(), name='powens-callback'),
-    path('login/', login_page, name='login_page'),
-    path('callback/', callback_page, name='callback_page'),
-    path('api/auth/session-login/', session_login_view, name='session_login'),
-    path('emails/test/', emails_test_page, name='emails_test_page'),
+
+    # Catch-all: serve React frontend for all non-API routes
+    re_path(r'^(?!api/|admin/|financial/|callback/).*', include('frontend.urls')),
 ]
