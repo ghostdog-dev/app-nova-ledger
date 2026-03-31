@@ -88,22 +88,11 @@ export function AddConnectionModal({ open, onClose, onSuccess }: AddConnectionMo
     setError(null);
     try {
       const redirectUri = `${window.location.origin}/connections/oauth/callback`;
-      const { authorizationUrl } = await initiateOAuth(selectedService.id, redirectUri);
+      const { authorizationUrl, state } = await initiateOAuth(selectedService.id, redirectUri);
 
-      /**
-       * F53 — Store OAuth state in sessionStorage before redirecting.
-       * The callback page will compare this against the state returned by the provider.
-       */
-      try {
-        const url = new URL(authorizationUrl);
-        const state = url.searchParams.get('state');
-        if (state) {
-          sessionStorage.setItem('oauth_state', state);
-          sessionStorage.setItem('oauth_provider', selectedService.id);
-        }
-      } catch {
-        // If we can't parse the URL, proceed anyway — backend still validates state
-      }
+      // Store state + provider in sessionStorage for CSRF validation on callback
+      sessionStorage.setItem('oauth_state', state);
+      sessionStorage.setItem('oauth_provider', selectedService.id);
 
       // F02 — Validate the authorization URL before redirecting
       try {

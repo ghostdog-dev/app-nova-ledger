@@ -21,8 +21,8 @@ export async function getConnections(): Promise<ServiceConnection[]> {
 export async function initiateOAuth(
   providerName: string,
   redirectUri: string
-): Promise<{ authorizationUrl: string }> {
-  return companyApi.post<{ authorizationUrl: string }>(
+): Promise<{ authorizationUrl: string; state: string }> {
+  return companyApi.post<{ authorizationUrl: string; state: string }>(
     '/connections/oauth/initiate/',
     { providerName, redirectUri }
   );

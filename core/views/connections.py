@@ -122,31 +122,122 @@ def connection_delete_view(request, company_pk, connection_pk):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def oauth_initiate_view(request, company_pk):
+    """Build OAuth authorization URL for email providers (gmail/outlook).
+    Uses the same SocialApp credentials as social login."""
+    import secrets
+    import urllib.parse
+
     company = _get_company(request.user, company_pk)
     if not company:
+        return Response({'detail': 'Company not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    provider_name = request.data.get('provider_name', '')
+    redirect_uri = request.data.get('redirect_uri', '')
+
+    # Map provider names to allauth provider keys
+    provider_map = {'gmail': 'google', 'outlook': 'microsoft'}
+    allauth_provider = provider_map.get(provider_name)
+
+    if not allauth_provider:
         return Response(
-            {'error': 'Company not found or access denied'},
-            status=status.HTTP_404_NOT_FOUND,
+            {'detail': f'OAuth not supported for {provider_name}'},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
-    provider_name = request.data.get('provider_name', 'unknown')
-    return Response(
-        {'error': f'OAuth not yet configured for {provider_name}'},
-        status=status.HTTP_501_NOT_IMPLEMENTED,
-    )
+    try:
+        from allauth.socialaccount.models import SocialApp
+        app = SocialApp.objects.get(provider=allauth_provider)
+    except Exception:
+        return Response(
+            {'detail': f'{provider_name} OAuth not configured'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    state = secrets.token_urlsafe(32)
+
+    if allauth_provider == 'google':
+        params = urllib.parse.urlencode({
+            'client_id': app.client_id,
+            'redirect_uri': redirect_uri,
+            'response_type': 'code',
+            'scope': 'openid email profile https://www.googleapis.com/auth/gmail.readonly',
+            'access_type': 'offline',
+            'prompt': 'consent',
+            'state': state,
+        })
+        url = f'https://accounts.google.com/o/oauth2/v2/auth?{params}'
+    else:
+        params = urllib.parse.urlencode({
+            'client_id': app.client_id,
+            'redirect_uri': redirect_uri,
+            'response_type': 'code',
+            'scope': 'openid email profile User.Read Mail.Read offline_access',
+            'response_mode': 'query',
+            'state': state,
+        })
+        url = f'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?{params}'
+
+    return Response({'authorization_url': url, 'state': state})
 
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def oauth_complete_view(request, company_pk):
+    """Complete OAuth flow: exchange code for token, create ServiceConnection."""
+    import requests as http_requests
+
     company = _get_company(request.user, company_pk)
     if not company:
-        return Response(
-            {'error': 'Company not found or access denied'},
-            status=status.HTTP_404_NOT_FOUND,
-        )
+        return Response({'detail': 'Company not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    return Response(
-        {'error': 'OAuth completion not yet configured'},
-        status=status.HTTP_501_NOT_IMPLEMENTED,
+    provider_name = request.data.get('provider_name', '')
+    code = request.data.get('code', '')
+    redirect_uri = request.data.get('redirect_uri', '')
+
+    provider_map = {'gmail': 'google', 'outlook': 'microsoft'}
+    allauth_provider = provider_map.get(provider_name)
+
+    if not allauth_provider or not code:
+        return Response({'detail': 'Missing provider_name or code'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        from allauth.socialaccount.models import SocialApp
+        app = SocialApp.objects.get(provider=allauth_provider)
+    except Exception:
+        return Response({'detail': f'{provider_name} not configured'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Exchange code for tokens
+    if allauth_provider == 'google':
+        token_url = 'https://oauth2.googleapis.com/token'
+    else:
+        token_url = 'https://login.microsoftonline.com/common/oauth2/v2.0/token'
+
+    token_resp = http_requests.post(token_url, data={
+        'grant_type': 'authorization_code',
+        'code': code,
+        'redirect_uri': redirect_uri,
+        'client_id': app.client_id,
+        'client_secret': app.secret,
+    }, timeout=10)
+
+    if token_resp.status_code != 200:
+        return Response({'detail': 'Failed to exchange code for token'}, status=status.HTTP_400_BAD_REQUEST)
+
+    tokens = token_resp.json()
+
+    # Create or update ServiceConnection
+    connection, _ = ServiceConnection.objects.update_or_create(
+        company=company,
+        provider_name=provider_name,
+        defaults={
+            'service_type': 'email',
+            'auth_type': 'oauth',
+            'status': 'active',
+            'credentials': {
+                'access_token': tokens.get('access_token', ''),
+                'refresh_token': tokens.get('refresh_token', ''),
+            },
+        },
     )
+
+    return Response(ServiceConnectionSerializer(connection).data, status=status.HTTP_201_CREATED)
