@@ -35,6 +35,23 @@ INSTALLED_APPS = [
     'paypal_provider',
     'mollie_provider',
     'stripe_provider',
+    'stripe_financial',
+    'fintecture_provider',
+    'gocardless_provider',
+    'payplug_provider',
+    'sumup_provider',
+    'bank_import',
+    'evoliz_provider',
+    'pennylane_provider',
+    'vosfactures_provider',
+    'qonto_provider',
+    'shopify_provider',
+    'prestashop_provider',
+    'woocommerce_provider',
+    'alma_provider',
+    'choruspro_provider',
+    'ai_agent',
+    'core',
 ]
 
 SITE_ID = 1
@@ -133,6 +150,81 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'stripe_financial': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'fintecture_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'gocardless_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'payplug_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'sumup_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'bank_import': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'evoliz_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'pennylane_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'vosfactures_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'qonto_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'shopify_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'prestashop_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'woocommerce_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'alma_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'choruspro_provider': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
 
@@ -143,6 +235,15 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
+    ),
+    'DEFAULT_RENDERER_CLASSES': (
+        'djangorestframework_camel_case.render.CamelCaseJSONRenderer',
+        'djangorestframework_camel_case.render.CamelCaseBrowsableAPIRenderer',
+    ),
+    'DEFAULT_PARSER_CLASSES': (
+        'djangorestframework_camel_case.parser.CamelCaseFormParser',
+        'djangorestframework_camel_case.parser.CamelCaseMultiPartParser',
+        'djangorestframework_camel_case.parser.CamelCaseJSONParser',
     ),
 }
 
@@ -190,9 +291,18 @@ POWENS_CLIENT_SECRET = os.getenv('POWENS_CLIENT_SECRET', '')
 POWENS_REDIRECT_URI = os.getenv('POWENS_REDIRECT_URI', 'http://localhost:8000/callback/powens/')
 
 # AI Pipeline Configuration
+# --- Models (override any via .env) ---
+# Workers: fast tasks (triage, simple decisions)
 AI_MODEL_TRIAGE = os.getenv('AI_MODEL_TRIAGE', 'claude-haiku-4-5-20251001')
-AI_MODEL_EXTRACTION = os.getenv('AI_MODEL_EXTRACTION', 'claude-haiku-4-5-20251001')
+# Extraction: Sonnet for precision on amounts/line items (Haiku hallucinates)
+AI_MODEL_EXTRACTION = os.getenv('AI_MODEL_EXTRACTION', 'claude-sonnet-4-5-20250929')
 AI_MODEL_CORRELATION = os.getenv('AI_MODEL_CORRELATION', 'claude-haiku-4-5-20251001')
+AI_MODEL_RECURRING = os.getenv('AI_MODEL_RECURRING', 'claude-haiku-4-5-20251001')
+# Classification: Sonnet for accounting judgment (PCG codes, TVA)
+AI_MODEL_CLASSIFICATION = os.getenv('AI_MODEL_CLASSIFICATION', 'claude-sonnet-4-5-20250929')
+# Verifier: Haiku suffices for checking obvious errors (worker Sonnet does the heavy lifting)
+AI_MODEL_VERIFIER = os.getenv('AI_MODEL_VERIFIER', 'claude-haiku-4-5-20251001')
+# --- Pipeline tuning ---
 AI_TRIAGE_BATCH_SIZE = int(os.getenv('AI_TRIAGE_BATCH_SIZE', '40'))
 AI_EXTRACTION_BATCH_SIZE = int(os.getenv('AI_EXTRACTION_BATCH_SIZE', '5'))
 AI_TRIAGE_MAX_CONCURRENT = int(os.getenv('AI_TRIAGE_MAX_CONCURRENT', '3'))
@@ -203,10 +313,18 @@ AI_RETRY_BASE_DELAY = int(os.getenv('AI_RETRY_BASE_DELAY', '2'))
 AI_EMAIL_BODY_MAX_CHARS = int(os.getenv('AI_EMAIL_BODY_MAX_CHARS', '4000'))
 DEFAULT_EMAIL_LOOKBACK_DAYS = int(os.getenv('DEFAULT_EMAIL_LOOKBACK_DAYS', '30'))
 
+# Classification confidence threshold — transactions below this get reclassified with extended thinking
+AI_CLASSIFICATION_CONFIDENCE_THRESHOLD = float(os.getenv('AI_CLASSIFICATION_CONFIDENCE_THRESHOLD', '0.7'))
+
+# Recurring detection thresholds
+RECURRING_AMOUNT_VARIANCE = float(os.getenv('RECURRING_AMOUNT_VARIANCE', '0.20'))
+RECURRING_CV_THRESHOLD = float(os.getenv('RECURRING_CV_THRESHOLD', '0.30'))
+RECURRING_MIN_TRANSACTIONS = int(os.getenv('RECURRING_MIN_TRANSACTIONS', '3'))
+
 # PayPal — API key auth (user provides their own client_id + client_secret)
 # No platform-level PayPal credentials needed; credentials are per-user.
 
-# Stripe — API key auth (user provides their own sk_test_/sk_live_ key)
-# STRIPE_SECRET_KEY is only needed for future webhook signature verification
+# Stripe — platform keys (used for Financial Connections + webhook verification)
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
+STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
