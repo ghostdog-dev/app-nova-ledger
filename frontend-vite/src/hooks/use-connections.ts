@@ -62,6 +62,14 @@ export async function connectApiKey(
 }
 
 /**
+ * Trigger a manual data sync for a connection.
+ * Backend endpoint: POST /companies/{company_pk}/connections/{id}/sync/
+ */
+export async function syncConnection(id: string): Promise<{ provider: string; status: string; details: Record<string, unknown> }> {
+  return companyApi.post<{ provider: string; status: string; details: Record<string, unknown> }>(`/connections/${id}/sync/`);
+}
+
+/**
  * Test whether a connection is still active.
  * Backend endpoint: POST /companies/{company_pk}/connections/{id}/check/
  */
@@ -86,6 +94,7 @@ interface UseConnectionsReturn {
   refetch: () => Promise<void>;
   disconnect: (id: string) => Promise<void>;
   test: (id: string) => Promise<boolean>;
+  sync: (id: string) => Promise<{ provider: string; status: string; details: Record<string, unknown> }>;
 }
 
 /**
@@ -134,6 +143,12 @@ export function useConnections(): UseConnectionsReturn {
     return result.ok;
   }, []);
 
+  const sync = useCallback(async (id: string) => {
+    const result = await syncConnection(id);
+    await fetchConnections(); // Refresh to update lastSync
+    return result;
+  }, [fetchConnections]);
+
   return {
     connections,
     isLoading,
@@ -141,5 +156,6 @@ export function useConnections(): UseConnectionsReturn {
     refetch: fetchConnections,
     disconnect,
     test,
+    sync,
   };
 }

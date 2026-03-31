@@ -26,6 +26,7 @@ urlpatterns = [
     path('companies/<uuid:company_pk>/connections/oauth/initiate/', connections.oauth_initiate_view),
     path('companies/<uuid:company_pk>/connections/oauth/complete/', connections.oauth_complete_view),
     path('companies/<uuid:company_pk>/connections/<uuid:connection_pk>/check/', connections.connection_check_view),
+    path('companies/<uuid:company_pk>/connections/<uuid:connection_pk>/sync/', connections.connection_sync_view),
     path('companies/<uuid:company_pk>/connections/<uuid:connection_pk>/', connections.connection_delete_view),
 
     # Dashboard

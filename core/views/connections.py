@@ -121,6 +121,84 @@ def connection_delete_view(request, company_pk, connection_pk):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+def connection_sync_view(request, company_pk, connection_pk):
+    """Trigger a manual data sync for a connection."""
+    from django.utils import timezone
+
+    company = _get_company(request.user, company_pk)
+    if not company:
+        return Response({'detail': 'Company not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        connection = ServiceConnection.objects.get(company=company, public_id=connection_pk)
+    except (ServiceConnection.DoesNotExist, ValueError):
+        return Response({'detail': 'Connection not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    result = {'provider': connection.provider_name, 'status': 'ok', 'details': {}}
+
+    try:
+        if connection.provider_name == 'gmail':
+            from emails.services import gmail_fetcher
+            count = gmail_fetcher.fetch_emails(request.user)
+            result['details'] = {'emails_fetched': count}
+
+        elif connection.provider_name == 'outlook':
+            from emails.services import microsoft_fetcher
+            count = microsoft_fetcher.fetch_emails(request.user)
+            result['details'] = {'emails_fetched': count}
+
+        elif connection.provider_name == 'stripe':
+            from stripe_provider.views import StripeSyncView
+            result['details'] = _call_provider_sync(StripeSyncView, request)
+
+        elif connection.provider_name == 'paypal':
+            from paypal_provider.views import PayPalSyncView
+            result['details'] = _call_provider_sync(PayPalSyncView, request)
+
+        elif connection.provider_name == 'mollie':
+            from mollie_provider.views import MollieSyncView
+            result['details'] = _call_provider_sync(MollieSyncView, request)
+
+        else:
+            # Generic: try to import {provider}_provider.views.{Provider}SyncView
+            provider = connection.provider_name
+            try:
+                import importlib
+                module = importlib.import_module(f'{provider}_provider.views')
+                cls_name = f'{provider.title().replace("_", "")}SyncView'
+                sync_class = getattr(module, cls_name)
+                result['details'] = _call_provider_sync(sync_class, request)
+            except (ImportError, AttributeError):
+                result['details'] = {'message': f'Sync not yet implemented for {provider}'}
+
+        connection.last_sync = timezone.now()
+        connection.status = 'active'
+        connection.error_message = ''
+        connection.save()
+
+    except Exception as e:
+        connection.status = 'error'
+        connection.error_message = str(e)
+        connection.save()
+        result['status'] = 'error'
+        result['details'] = {'error': str(e)}
+
+    return Response(result)
+
+
+def _call_provider_sync(view_class, request):
+    """Call an existing provider SyncView and return its response data."""
+    from django.test import RequestFactory
+    factory = RequestFactory()
+    fake_request = factory.post('/fake/', content_type='application/json')
+    fake_request.user = request.user
+    view = view_class.as_view()
+    response = view(fake_request)
+    return response.data if hasattr(response, 'data') else {}
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def oauth_initiate_view(request, company_pk):
     """Build OAuth authorization URL for email providers (gmail/outlook).
     Uses the same SocialApp credentials as social login."""
