@@ -42,15 +42,22 @@ def connection_data_view(request, company_pk, connection_pk):
     service_type = connection.service_type
     last_sync = connection.last_sync.isoformat() if connection.last_sync else None
 
-    # Email providers — return emails
+    # Email providers — return emails with pagination
     if provider in ('gmail', 'outlook'):
         from emails.models import Email
 
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 50))
+
         provider_map = {'gmail': 'google', 'outlook': 'microsoft'}
-        emails = Email.objects.filter(
+        qs = Email.objects.filter(
             user=request.user,
             provider=provider_map.get(provider, provider),
-        ).order_by('-date')[:50]
+        ).order_by('-date')
+
+        total_count = qs.count()
+        start = (page - 1) * page_size
+        emails = qs[start:start + page_size]
 
         items = [
             {
@@ -69,10 +76,10 @@ def connection_data_view(request, company_pk, connection_pk):
             'service_type': service_type,
             'last_sync': last_sync,
             'items': items,
-            'total_count': Email.objects.filter(
-                user=request.user,
-                provider=provider_map.get(provider, provider),
-            ).count(),
+            'total_count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': max(1, (total_count + page_size - 1) // page_size),
         })
 
     # Other providers — placeholder

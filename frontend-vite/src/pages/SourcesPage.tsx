@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Loader2, RefreshCw, Database } from 'lucide-react';
+import { Loader2, RefreshCw, Database, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { companyApi } from '@/lib/company-api';
 import { useConnections, syncConnection } from '@/hooks/use-connections';
@@ -23,6 +23,9 @@ interface ConnectionData {
   last_sync: string | null;
   items: EmailItem[];
   total_count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
   message?: string;
 }
 
@@ -102,6 +105,7 @@ export default function SourcesPage() {
   const [data, setData] = useState<ConnectionData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [page, setPage] = useState(1);
 
   // Auto-select first connection
   useEffect(() => {
@@ -118,14 +122,14 @@ export default function SourcesPage() {
     if (!selectedId) return;
     setIsLoadingData(true);
     try {
-      const result = await companyApi.get<ConnectionData>(`/connections/${selectedId}/data/`);
+      const result = await companyApi.get<ConnectionData>(`/connections/${selectedId}/data/?page=${page}&page_size=50`);
       setData(result);
     } catch {
       setData(null);
     } finally {
       setIsLoadingData(false);
     }
-  }, [selectedId]);
+  }, [selectedId, page]);
 
   useEffect(() => {
     if (selectedId) {
@@ -149,6 +153,7 @@ export default function SourcesPage() {
 
   const handleTabClick = (conn: ServiceConnection) => {
     setSelectedId(conn.publicId);
+    setPage(1);
     setData(null);
   };
 
@@ -255,12 +260,35 @@ export default function SourcesPage() {
               <div className={styles.emptyState}>Aucune donnee</div>
             )}
 
-            {/* Footer */}
+            {/* Footer with pagination */}
             {data && data.total_count > 0 && (
               <div className={styles.tableFooter}>
                 <span>
                   {data.total_count.toLocaleString('fr-FR')} element{data.total_count > 1 ? 's' : ''} au total
                 </span>
+                {data.total_pages > 1 && (
+                  <div className={styles.pagination}>
+                    <button
+                      type="button"
+                      className={styles.pageBtn}
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <span className={styles.pageInfo}>
+                      {page} / {data.total_pages}
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.pageBtn}
+                      disabled={page >= data.total_pages}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
