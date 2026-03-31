@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient, storeAccessToken } from '@/lib/api-client';
 import { completeOAuth } from '@/hooks/use-connections';
 import { useAuthStore } from '@/stores/auth-store';
+import { useCompanyStore } from '@/stores/company-store';
 import type { AuthResponse } from '@/types';
 
 const KNOWN_OAUTH_ERRORS: Record<string, string> = {
@@ -66,6 +67,8 @@ export default function SocialAuthCallbackPage() {
 
           storeAccessToken(response.tokens.accessToken);
           setAuth(response.user, response.tokens.accessToken);
+          // Load companies before navigating so dashboard has an active company
+          await useCompanyStore.getState().fetchCompanies();
           navigate('/dashboard');
 
         } else if (connState && stateFromUrl === connState) {
