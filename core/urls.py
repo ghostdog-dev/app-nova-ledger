@@ -10,6 +10,7 @@ urlpatterns = [
     path('accounts/me/', auth.me_view),
     path('accounts/token/refresh/', auth.token_refresh_view),
     path('accounts/social-login/', auth.social_login_view),
+    path('accounts/social-auth-url/', auth.social_auth_url_view),
     path('accounts/clear-session/', auth.clear_session_view),
 
     # Companies

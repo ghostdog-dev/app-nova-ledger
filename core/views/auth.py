@@ -285,3 +285,45 @@ def clear_session_view(request):
     response = Response(status=status.HTTP_204_NO_CONTENT)
     response.delete_cookie('refresh_token', path='/')
     return response
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def social_auth_url_view(request):
+    """Build and return the OAuth authorization URL for Google or Microsoft.
+    Keeps client_id server-side — never exposed to the frontend."""
+    import urllib.parse
+    from allauth.socialaccount.models import SocialApp
+
+    provider = request.data.get('provider', '')
+    redirect_uri = request.data.get('redirect_uri', '')
+
+    if provider not in ('google', 'microsoft'):
+        return Response({'detail': f'Unknown provider: {provider}'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        app = SocialApp.objects.get(provider=provider)
+    except SocialApp.DoesNotExist:
+        return Response({'detail': f'{provider} not configured'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if provider == 'google':
+        params = urllib.parse.urlencode({
+            'client_id': app.client_id,
+            'redirect_uri': redirect_uri,
+            'response_type': 'code',
+            'scope': 'openid profile email',
+            'access_type': 'online',
+            'prompt': 'select_account',
+        })
+        url = f'https://accounts.google.com/o/oauth2/v2/auth?{params}'
+    else:
+        params = urllib.parse.urlencode({
+            'client_id': app.client_id,
+            'redirect_uri': redirect_uri,
+            'response_type': 'code',
+            'scope': 'openid profile email User.Read',
+            'response_mode': 'query',
+        })
+        url = f'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?{params}'
+
+    return Response({'authorization_url': url})
