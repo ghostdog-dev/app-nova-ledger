@@ -261,34 +261,32 @@ export default function SourcesPage() {
             )}
 
             {/* Footer with pagination */}
-            {data && data.total_count > 0 && (
+            {data && (
               <div className={styles.tableFooter}>
                 <span>
                   {data.total_count.toLocaleString('fr-FR')} element{data.total_count > 1 ? 's' : ''} au total
                 </span>
-                {data.total_pages > 1 && (
-                  <div className={styles.pagination}>
-                    <button
-                      type="button"
-                      className={styles.pageBtn}
-                      disabled={page <= 1}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      <ChevronLeft size={14} />
-                    </button>
-                    <span className={styles.pageInfo}>
-                      {page} / {data.total_pages}
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.pageBtn}
-                      disabled={page >= data.total_pages}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                )}
+                <div className={styles.pagination}>
+                  <button
+                    type="button"
+                    className={styles.pageBtn}
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <span className={styles.pageInfo}>
+                    {page} / {data.total_pages || 1}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.pageBtn}
+                    disabled={page >= (data.total_pages || 1)}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
               </div>
             )}
           </div>
