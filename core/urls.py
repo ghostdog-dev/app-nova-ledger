@@ -1,6 +1,6 @@
 from django.urls import path
 
-from core.views import auth, companies, connections, correlations, dashboard, executions, exports, transactions, ws_ticket
+from core.views import auth, companies, connections, correlations, dashboard, executions, exports, sources, transactions, ws_ticket
 
 urlpatterns = [
     # Auth
@@ -28,6 +28,9 @@ urlpatterns = [
     path('companies/<uuid:company_pk>/connections/<uuid:connection_pk>/check/', connections.connection_check_view),
     path('companies/<uuid:company_pk>/connections/<uuid:connection_pk>/sync/', connections.connection_sync_view),
     path('companies/<uuid:company_pk>/connections/<uuid:connection_pk>/', connections.connection_delete_view),
+
+    # Sources (connection data)
+    path('companies/<uuid:company_pk>/connections/<uuid:connection_pk>/data/', sources.connection_data_view),
 
     # Dashboard
     path('companies/<uuid:company_pk>/dashboard/', dashboard.dashboard_view),

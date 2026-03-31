@@ -6,4 +6,5 @@ from . import dashboard  # noqa: F401
 from . import executions  # noqa: F401
 from . import exports  # noqa: F401
 from . import transactions  # noqa: F401
+from . import sources  # noqa: F401
 from . import ws_ticket  # noqa: F401
