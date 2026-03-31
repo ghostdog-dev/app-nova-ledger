@@ -1,6 +1,6 @@
 from django.urls import path
 
-from core.views import auth, companies, connections, correlations, dashboard, executions, exports, sources, transactions, ws_ticket
+from core.views import auth, bank_import, companies, connections, correlations, dashboard, executions, exports, sources, transactions, ws_ticket
 
 urlpatterns = [
     # Auth
@@ -47,6 +47,10 @@ urlpatterns = [
 
     # Exports
     path('exports/<uuid:export_pk>/', exports.export_detail_view),
+
+    # Bank Import
+    path('companies/<uuid:company_pk>/bank-import/upload/', bank_import.BankFileUploadView.as_view(), name='bank-import-upload'),
+    path('companies/<uuid:company_pk>/bank-import/', bank_import.BankImportListView.as_view(), name='bank-import-list'),
 
     # Transactions
     path('companies/<uuid:company_pk>/transactions/', transactions.transaction_list_view),

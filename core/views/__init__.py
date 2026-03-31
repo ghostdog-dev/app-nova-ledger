@@ -8,3 +8,4 @@ from . import exports  # noqa: F401
 from . import transactions  # noqa: F401
 from . import sources  # noqa: F401
 from . import ws_ticket  # noqa: F401
+from . import bank_import  # noqa: F401
