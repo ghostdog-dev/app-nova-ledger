@@ -276,6 +276,25 @@ def social_login_view(request):
     except Exception:
         logger.warning('Could not create SocialAccount link for %s', social_email)
 
+    # Auto-create email ServiceConnection (Google → gmail, Microsoft → outlook)
+    _ensure_company(user)
+    email_provider = 'gmail' if provider == 'google' else 'outlook'
+    from core.models import ServiceConnection
+    company = Company.objects.filter(
+        members__user=user, members__is_active=True
+    ).first()
+    if company:
+        ServiceConnection.objects.get_or_create(
+            company=company,
+            provider_name=email_provider,
+            defaults={
+                'service_type': 'email',
+                'auth_type': 'oauth',
+                'status': 'active',
+                'credentials': {'access_token': access_token},
+            },
+        )
+
     return _build_auth_response(user, request)
 
 

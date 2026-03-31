@@ -183,6 +183,26 @@ export const SERVICES_CATALOG: ServiceDefinition[] = [
     description: 'Commandes et paiements e-commerce',
     credentialFields: ['shop_url', 'consumer_key', 'consumer_secret'],
   },
+
+  // ── Email ────────────────────────────────────────────────
+  {
+    id: 'gmail',
+    name: 'Gmail',
+    type: 'email',
+    authMethod: 'oauth',
+    color: '#EA4335',
+    initials: 'GM',
+    description: 'Emails et pieces jointes de facturation Google',
+  },
+  {
+    id: 'outlook',
+    name: 'Outlook',
+    type: 'email',
+    authMethod: 'oauth',
+    color: '#0078D4',
+    initials: 'OL',
+    description: 'Emails et pieces jointes de facturation Microsoft',
+  },
 ];
 
 export function getServiceById(id: string): ServiceDefinition | undefined {

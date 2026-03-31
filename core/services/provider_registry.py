@@ -82,6 +82,17 @@ PROVIDER_REGISTRY = {
         'auth_type': 'api_key',
         'credential_fields': ['shop_url', 'consumer_key', 'consumer_secret'],
     },
+    # Email providers (connected via social OAuth login)
+    'gmail': {
+        'service_type': 'email',
+        'auth_type': 'oauth',
+        'credential_fields': [],
+    },
+    'outlook': {
+        'service_type': 'email',
+        'auth_type': 'oauth',
+        'credential_fields': [],
+    },
 }
 
 
