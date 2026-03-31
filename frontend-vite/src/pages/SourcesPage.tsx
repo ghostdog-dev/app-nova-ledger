@@ -14,18 +14,18 @@ interface EmailItem {
   sender: string;
   date: string;
   status: string;
-  body_preview: string;
+  bodyPreview: string;
 }
 
 interface ConnectionData {
-  provider_name: string;
-  service_type: string;
-  last_sync: string | null;
+  providerName: string;
+  serviceType: string;
+  lastSync: string | null;
   items: EmailItem[];
-  total_count: number;
+  totalCount: number;
   page: number;
-  page_size: number;
-  total_pages: number;
+  pageSize: number;
+  totalPages: number;
   message?: string;
 }
 
@@ -210,8 +210,8 @@ export default function SourcesPage() {
                   {selectedConnection ? getProviderLabel(selectedConnection.providerName) : 'Source'}
                 </span>
               </div>
-              {data?.last_sync && (
-                <span className={styles.lastSync}>{formatLastSync(data.last_sync)}</span>
+              {data?.lastSync && (
+                <span className={styles.lastSync}>{formatLastSync(data.lastSync)}</span>
               )}
             </div>
 
@@ -264,7 +264,7 @@ export default function SourcesPage() {
             {data && (
               <div className={styles.tableFooter}>
                 <span>
-                  {data.total_count.toLocaleString('fr-FR')} element{data.total_count > 1 ? 's' : ''} au total
+                  {data.totalCount.toLocaleString('fr-FR')} element{data.totalCount > 1 ? 's' : ''} au total
                 </span>
                 <div className={styles.pagination}>
                   <button
@@ -276,12 +276,12 @@ export default function SourcesPage() {
                     <ChevronLeft size={14} />
                   </button>
                   <span className={styles.pageInfo}>
-                    {page} / {data.total_pages || 1}
+                    {page} / {data.totalPages || 1}
                   </span>
                   <button
                     type="button"
                     className={styles.pageBtn}
-                    disabled={page >= (data.total_pages || 1)}
+                    disabled={page >= (data.totalPages || 1)}
                     onClick={() => setPage((p) => p + 1)}
                   >
                     <ChevronRight size={14} />
