@@ -269,6 +269,10 @@
   align-items: center;
 }
 
+.textRight {
+  text-align: right;
+}
+
 .pagination {
   display: flex;
   align-items: center;
