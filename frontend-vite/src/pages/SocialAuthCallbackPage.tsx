@@ -76,6 +76,11 @@ export default function SocialAuthCallbackPage() {
           sessionStorage.removeItem('oauth_state');
           sessionStorage.removeItem('oauth_provider');
 
+          // Restore auth + company after page redirect
+          const { initializeAuth } = await import('@/lib/api-client');
+          await initializeAuth();
+          await useCompanyStore.getState().fetchCompanies();
+
           await completeOAuth({
             providerName: connProvider ?? '',
             code,
