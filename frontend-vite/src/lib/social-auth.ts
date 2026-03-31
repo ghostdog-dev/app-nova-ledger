@@ -14,12 +14,13 @@ export async function startSocialLogin(provider: SocialProvider): Promise<void> 
   const redirectUri = `${window.location.origin}/auth/callback`;
 
   // Ask the backend to build the OAuth URL (keeps client_id server-side)
-  const { authorizationUrl } = await apiClient.post<{ authorizationUrl: string }>(
+  const { authorizationUrl, state } = await apiClient.post<{ authorizationUrl: string; state: string }>(
     '/accounts/social-auth-url/',
     { provider, redirectUri },
   );
 
-  // Store provider in sessionStorage for the callback page
+  // Store state + provider in sessionStorage for CSRF validation on callback
+  sessionStorage.setItem('social_oauth_state', state);
   sessionStorage.setItem('social_oauth_provider', provider);
 
   window.location.href = authorizationUrl;

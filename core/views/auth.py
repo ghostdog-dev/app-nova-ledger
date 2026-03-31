@@ -291,7 +291,9 @@ def clear_session_view(request):
 @permission_classes([AllowAny])
 def social_auth_url_view(request):
     """Build and return the OAuth authorization URL for Google or Microsoft.
-    Keeps client_id server-side — never exposed to the frontend."""
+    Keeps client_id server-side — never exposed to the frontend.
+    Generates a CSRF state token that the frontend stores and validates on callback."""
+    import secrets
     import urllib.parse
     from allauth.socialaccount.models import SocialApp
 
@@ -306,6 +308,8 @@ def social_auth_url_view(request):
     except SocialApp.DoesNotExist:
         return Response({'detail': f'{provider} not configured'}, status=status.HTTP_400_BAD_REQUEST)
 
+    state = secrets.token_urlsafe(32)
+
     if provider == 'google':
         params = urllib.parse.urlencode({
             'client_id': app.client_id,
@@ -314,6 +318,7 @@ def social_auth_url_view(request):
             'scope': 'openid profile email',
             'access_type': 'online',
             'prompt': 'select_account',
+            'state': state,
         })
         url = f'https://accounts.google.com/o/oauth2/v2/auth?{params}'
     else:
@@ -323,7 +328,8 @@ def social_auth_url_view(request):
             'response_type': 'code',
             'scope': 'openid profile email User.Read',
             'response_mode': 'query',
+            'state': state,
         })
         url = f'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?{params}'
 
-    return Response({'authorization_url': url})
+    return Response({'authorization_url': url, 'state': state})
