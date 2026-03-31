@@ -43,10 +43,11 @@ def normalize_vendor(name: str | None) -> str:
     result = name.strip()
     result = _BANK_PREFIXES.sub('', result)
     result = result.lower()
+    result = _TRAILING_NUMBERS.sub('', result)
+    result = _FRENCH_CITIES.sub('', result)
+    result = _MULTI_SPACE.sub(' ', result).strip()
     for _ in range(2):
         result = _CORPORATE_SUFFIXES.sub('', result).strip(' ,.')
-    result = _FRENCH_CITIES.sub('', result)
-    result = _TRAILING_NUMBERS.sub('', result)
     result = _MULTI_SPACE.sub(' ', result).strip()
     return result
 
