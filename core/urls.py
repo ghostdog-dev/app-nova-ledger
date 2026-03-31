@@ -1,6 +1,6 @@
 from django.urls import path
 
-from core.views import auth, bank_import, companies, connections, correlations, dashboard, executions, exports, sources, transactions, ws_ticket
+from core.views import auth, bank_import, clusters, companies, connections, correlations, dashboard, executions, exports, sources, transactions, unified_transactions, ws_ticket
 
 urlpatterns = [
     # Auth
@@ -54,6 +54,14 @@ urlpatterns = [
 
     # Transactions
     path('companies/<uuid:company_pk>/transactions/', transactions.transaction_list_view),
+
+    # Unified transactions
+    path('companies/<uuid:company_pk>/unified-transactions/', unified_transactions.UnifiedTransactionListView.as_view(), name='unified-transactions-list'),
+
+    # Clusters
+    path('companies/<uuid:company_pk>/clusters/', clusters.ClusterListView.as_view(), name='clusters-list'),
+    path('companies/<uuid:company_pk>/clusters/<int:pk>/', clusters.ClusterDetailView.as_view(), name='clusters-detail'),
+    path('companies/<uuid:company_pk>/clusters/<int:pk>/verify/', clusters.ClusterVerifyView.as_view(), name='clusters-verify'),
 
     # WebSocket ticket
     path('ws/ticket/', ws_ticket.ws_ticket_view),

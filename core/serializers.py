@@ -107,14 +107,14 @@ class ExecutionSerializer(serializers.ModelSerializer):
 
 
 class CreateExecutionSerializer(serializers.Serializer):
-    company_id = serializers.IntegerField()
+    company_id = serializers.IntegerField(required=False, default=0)
     date_from = serializers.DateField()
     date_to = serializers.DateField()
     granularity = serializers.ChoiceField(
         choices=Execution.GRANULARITY_CHOICES, default='invoice_payment',
     )
     included_connections = serializers.ListField(
-        child=serializers.IntegerField(), required=False, default=list,
+        child=serializers.CharField(), required=False, default=list,
     )
     parameters = serializers.DictField(required=False, default=dict)
 
@@ -130,3 +130,70 @@ class ExportFileSerializer(serializers.ModelSerializer):
             'error_message', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'public_id', 'created_at', 'updated_at']
+
+
+# --- Unified Ledger serializers ---
+
+from ai_agent.models import UnifiedTransaction, TransactionCluster
+
+
+class UnifiedTransactionSerializer(serializers.ModelSerializer):
+    reconciliation_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UnifiedTransaction
+        fields = [
+            'id', 'public_id', 'source_type', 'source_id', 'evidence_role',
+            'direction', 'category', 'amount', 'currency',
+            'amount_tax_excl', 'tax_amount', 'tax_rate',
+            'transaction_date', 'vendor_name', 'vendor_name_normalized',
+            'description', 'reference', 'payment_method', 'items',
+            'confidence', 'completeness',
+            'pcg_code', 'pcg_label', 'business_personal', 'tva_deductible',
+            'cluster', 'created_at',
+        ]
+
+    def get_reconciliation_status(self, obj):
+        if not obj.cluster_id:
+            return 'orphan'
+        if obj.cluster and obj.cluster.is_complete:
+            return 'matched'
+        return 'pending'
+
+
+class TransactionClusterSerializer(serializers.ModelSerializer):
+    transactions = UnifiedTransactionSerializer(many=True, read_only=True)
+    transactions_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TransactionCluster
+        fields = [
+            'id', 'public_id', 'label', 'cluster_type',
+            'total_revenue', 'total_cost', 'margin',
+            'total_tax_collected', 'total_tax_deductible',
+            'confidence', 'is_complete', 'corroboration_score',
+            'verification_status', 'match_reasoning', 'evidence_summary',
+            'created_by', 'transactions', 'transactions_count',
+            'created_at', 'updated_at',
+        ]
+
+    def get_transactions_count(self, obj):
+        return obj.transactions.count()
+
+
+class TransactionClusterListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for list views (no nested transactions)."""
+    transactions_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TransactionCluster
+        fields = [
+            'id', 'public_id', 'label', 'cluster_type',
+            'total_revenue', 'total_cost', 'margin',
+            'confidence', 'is_complete', 'corroboration_score',
+            'verification_status', 'transactions_count',
+            'created_at',
+        ]
+
+    def get_transactions_count(self, obj):
+        return obj.transactions.count()
