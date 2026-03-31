@@ -321,6 +321,20 @@ RECURRING_AMOUNT_VARIANCE = float(os.getenv('RECURRING_AMOUNT_VARIANCE', '0.20')
 RECURRING_CV_THRESHOLD = float(os.getenv('RECURRING_CV_THRESHOLD', '0.30'))
 RECURRING_MIN_TRANSACTIONS = int(os.getenv('RECURRING_MIN_TRANSACTIONS', '3'))
 
+# Unified Pipeline settings
+AI_MODEL_ENRICHMENT = os.environ.get('AI_MODEL_ENRICHMENT', 'claude-sonnet-4-5-20250929')
+AI_MODEL_CORRELATION_WORKER = os.environ.get('AI_MODEL_CORRELATION_WORKER', 'claude-sonnet-4-5-20250929')
+AI_MODEL_CORRELATION_VERIFIER = os.environ.get('AI_MODEL_CORRELATION_VERIFIER', 'claude-sonnet-4-5-20250929')
+AI_MODEL_VERIFICATION = os.environ.get('AI_MODEL_VERIFICATION', 'claude-haiku-4-5-20251001')
+
+AI_ENRICHMENT_BATCH_SIZE = int(os.environ.get('AI_ENRICHMENT_BATCH_SIZE', 20))
+AI_CORRELATION_BATCH_SIZE = int(os.environ.get('AI_CORRELATION_BATCH_SIZE', 30))
+AI_PHASE_TIMEOUT_SECONDS = int(os.environ.get('AI_PHASE_TIMEOUT_SECONDS', 600))
+
+# Bank import settings
+BANK_IMPORT_MAX_FILE_SIZE = int(os.environ.get('BANK_IMPORT_MAX_FILE_SIZE', 10 * 1024 * 1024))  # 10MB
+BANK_IMPORT_SUPPORTED_FORMATS = ['csv', 'ofx', 'qfx', 'xml']
+
 # PayPal — API key auth (user provides their own client_id + client_secret)
 # No platform-level PayPal credentials needed; credentials are per-user.
 
