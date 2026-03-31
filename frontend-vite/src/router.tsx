@@ -18,6 +18,7 @@ const NewExecutionPage = lazy(() => import('@/pages/NewExecutionPage'));
 const ExecutionDetailPage = lazy(() => import('@/pages/ExecutionDetailPage'));
 const TransactionsPage = lazy(() => import('@/pages/TransactionsPage'));
 const SourcesPage = lazy(() => import('@/pages/SourcesPage'));
+const BankImportPage = lazy(() => import('@/pages/BankImportPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const CompanySettingsPage = lazy(() => import('@/pages/CompanySettingsPage'));
 const PlansPage = lazy(() => import('@/pages/PlansPage'));
@@ -69,6 +70,7 @@ export const router = createBrowserRouter([
               { path: '/executions/:id', element: <ExecutionDetailPage /> },
               { path: '/transactions', element: <TransactionsPage /> },
               { path: '/sources', element: <SourcesPage /> },
+              { path: '/bank-import', element: <BankImportPage /> },
               { path: '/settings', element: <SettingsPage /> },
               { path: '/settings/company', element: <CompanySettingsPage /> },
               { path: '/settings/plans', element: <PlansPage /> },
