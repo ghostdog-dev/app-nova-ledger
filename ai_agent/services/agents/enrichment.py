@@ -1,40 +1,45 @@
 """
 Enrichment Agent — classifies expenses with PCG codes, vendor types, TVA.
 
-Worker: Sonnet (complex accounting reasoning)
-Verifier: Haiku (simple consistency check)
+Single-shot structured output (no agentic loop).
+Worker: Haiku (structured JSON output)
+Verifier: Haiku (consistency check on low-confidence results)
 """
 import json
 import logging
+from decimal import Decimal
 
 from django.conf import settings
 
 from ai_agent.models import UnifiedTransaction
 from ai_agent.services.agents.base import BaseAgent, AgentResult
-from ai_agent.services.tools import (
-    THINK_TOOL, CLASSIFY_EXPENSE_TOOL, ENRICH_TRANSACTION_TOOL,
-    make_tool_handlers,
-)
 
 logger = logging.getLogger(__name__)
 
 ENRICHMENT_SYSTEM_PROMPT = (
-    "You are a French accounting expert (expert-comptable) classifying financial transactions.\n\n"
-    "For each transaction, you MUST:\n"
-    "1. Call 'think' to analyze the transaction and plan your classification.\n"
-    "2. Call 'classify_expense' with your classification.\n\n"
-    "Classification rules:\n"
-    "- PCG codes: 606=achats marchandises, 611=sous-traitance, 613=locations, "
-    "615=services num\u00e9riques/h\u00e9bergement, 616=assurances, 623=publicit\u00e9, "
-    "625=d\u00e9placements/missions/r\u00e9ceptions, 626=frais postaux/t\u00e9l\u00e9com, "
-    "627=services bancaires/commissions, 628=divers (abonnements), "
-    "641=r\u00e9mun\u00e9rations personnel, 791=transferts de charges.\n"
-    "- business_personal: 'business' if clearly professional, 'personal' if clearly personal, "
-    "'unknown' if ambiguous (e.g. Uber Eats could be either).\n"
-    "- tva_deductible: true for business expenses from FR/EU vendors. "
-    "false for personal, non-EU vendors (US SaaS = no TVA), or when unsure.\n"
-    "- Category: match to the best category based on the vendor and description.\n\n"
-    "Process ALL transactions in the batch. Be efficient."
+    "Tu es un expert-comptable français. Pour chaque transaction, détermine:\n"
+    "1. pcg_code: code PCG (606=achats, 611=sous-traitance, 613=locations, 615=services numériques, "
+    "616=assurances, 623=publicité, 625=déplacements/repas, 626=télécom, 627=services bancaires, "
+    "628=abonnements, 641=salaires, 706=ventes services, 707=ventes marchandises)\n"
+    "2. pcg_label: libellé du code\n"
+    "3. category: revenue|expense_service|expense_goods|expense_shipping|purchase_cost|tax|fee|refund|transfer|salary|other\n"
+    "4. business_personal: business|personal|unknown\n"
+    "5. tva_deductible: true/false\n"
+    "6. tax_rate: taux TVA applicable (null si inconnu)\n"
+    "7. tax_amount: montant TVA calculé (null si impossible)\n"
+    "8. amount_tax_excl: montant HT (null si impossible)\n"
+    "9. confidence: 0.0-1.0\n\n"
+    "TAUX TVA:\n"
+    "- France: 20% (normal), 10% (restauration/transport), 5.5% (alimentaire/énergie), 2.1% (presse)\n"
+    "- Allemagne: 19%/7% | Espagne: 21%/10% | Italie: 22%/10% | Belgique: 21%/6%\n"
+    "- UK: 20%/5%/0% | Suisse: 8.1%/2.6%\n"
+    "- USA/non-EU (GitHub, Stripe, AWS, Google Cloud): 0%, TVA non déductible\n\n"
+    "RÈGLES TVA:\n"
+    "- Montant TTC (achat consommateur): tax_amount = montant × taux / (100 + taux)\n"
+    "- Montant HT (facture B2B): tax_amount = montant × taux / 100\n"
+    "- En cas de doute sur TTC/HT: assumer TTC pour achats, HT pour factures B2B\n"
+    "- JAMAIS inventer de montant. Si pas assez d'info, laisser null.\n\n"
+    "Retourne un JSON: {\"classifications\": [{\"transaction_id\": ..., \"pcg_code\": ..., ...}]}"
 )
 
 ENRICHMENT_VERIFIER_PROMPT = (
@@ -55,79 +60,104 @@ class EnrichmentAgent(BaseAgent):
     def __init__(self, client=None):
         super().__init__(
             client=client,
-            model=getattr(settings, 'AI_MODEL_CLASSIFICATION', 'claude-sonnet-4-5-20250929'),
+            model='claude-haiku-4-5-20251001',
         )
-        self.verifier_model = getattr(settings, 'AI_MODEL_VERIFIER', 'claude-haiku-4-5-20251001')
+        self.verifier_model = 'claude-haiku-4-5-20251001'
 
     def execute(self, user, context: dict) -> AgentResult:
-        # Get unclassified transactions (no pcg_code yet)
+        from django.db.models import Q
+
+        # Only process transactions that need work
         unclassified = UnifiedTransaction.objects.filter(
-            user=user, pcg_code='', direction='outflow',
+            user=user,
+        ).filter(
+            Q(pcg_code='') | Q(tax_amount__isnull=True)
         ).exclude(category='transfer')
 
         if not unclassified.exists():
             return AgentResult(success=True, items_processed=0)
 
-        batch_size = 20
+        batch_size = 50
         total_classified = 0
-        all_classifications = []
-        handlers = make_tool_handlers(user)
 
-        # Process in batches
         for i in range(0, unclassified.count(), batch_size):
             batch = list(unclassified[i:i + batch_size])
             batch_data = [
                 {
                     'id': tx.id,
                     'vendor_name': tx.vendor_name,
-                    'amount': str(tx.amount) if tx.amount else '?',
+                    'amount': str(tx.amount),
                     'currency': tx.currency,
-                    'description': tx.description[:100],
+                    'description': tx.description[:200],
                     'source_type': tx.source_type,
-                    'category': tx.category,
+                    'direction': tx.direction,
                 }
                 for tx in batch
             ]
 
-            user_msg = (
-                f"Classify these {len(batch)} transactions. "
-                f"For each: 1) think, 2) classify_expense.\n\n"
-                f"Transactions:\n{json.dumps(batch_data, ensure_ascii=False)}"
-            )
-
-            tools = [THINK_TOOL, CLASSIFY_EXPENSE_TOOL]
-
+            # Single-shot structured output call
             try:
-                messages, stats = self._run_agentic_loop(
-                    system=ENRICHMENT_SYSTEM_PROMPT,
-                    messages=[{'role': 'user', 'content': user_msg}],
-                    tools=tools,
-                    tool_handlers=handlers,
-                    max_iterations=len(batch) + 5,
+                response = self._call_llm_sync(
+                    system=[{
+                        'type': 'text',
+                        'text': ENRICHMENT_SYSTEM_PROMPT,
+                        'cache_control': {'type': 'ephemeral'},
+                    }],
+                    messages=[{
+                        'role': 'user',
+                        'content': json.dumps({'transactions': batch_data}, ensure_ascii=False),
+                    }],
+                    max_tokens=8192,
                 )
-                total_classified += len(batch)
-                all_classifications.extend(batch_data)
+
+                text = self._extract_text(response)
+                result = self._extract_json(text)
+
+                if result and 'classifications' in result:
+                    self._apply_classifications(user, result['classifications'])
+                    total_classified += len(result['classifications'])
             except Exception as e:
                 logger.error(f'[Enrichment] Batch error: {e}')
 
-        # Run verifier on all classifications
-        corrections = self.run_verifier(user, all_classifications, context)
+        # Verifier pass — only check low confidence
+        corrections = self.run_verifier(user, total_classified, context)
         if corrections:
             self._apply_corrections(user, corrections)
 
         return AgentResult(
             success=True,
             items_processed=total_classified,
-            stats={'classifications': total_classified, 'corrections': len(corrections)},
+            stats={'corrections': len(corrections)},
         )
 
-    def run_verifier(self, user, classifications: list, context: dict) -> list:
-        if not classifications:
+    def _apply_classifications(self, user, classifications):
+        for c in classifications:
+            try:
+                tx = UnifiedTransaction.objects.get(id=c['transaction_id'], user=user)
+                tx.pcg_code = c.get('pcg_code', tx.pcg_code)
+                tx.pcg_label = c.get('pcg_label', tx.pcg_label)
+                tx.category = c.get('category', tx.category)
+                tx.business_personal = c.get('business_personal', tx.business_personal)
+                tx.tva_deductible = c.get('tva_deductible', tx.tva_deductible)
+                if c.get('tax_rate') is not None:
+                    tx.tax_rate = Decimal(str(c['tax_rate']))
+                if c.get('tax_amount') is not None:
+                    tx.tax_amount = Decimal(str(c['tax_amount']))
+                if c.get('amount_tax_excl') is not None:
+                    tx.amount_tax_excl = Decimal(str(c['amount_tax_excl']))
+                tx.confidence = max(tx.confidence, c.get('confidence', 0))
+                tx.save()
+            except (UnifiedTransaction.DoesNotExist, Exception) as e:
+                logger.error(f'[Enrichment] Error applying classification: {e}')
+
+    def run_verifier(self, user, total_classified, context: dict) -> list:
+        low_conf = UnifiedTransaction.objects.filter(
+            user=user, confidence__lt=0.7,
+        ).exclude(pcg_code='')[:50]
+
+        if not low_conf.exists():
             return []
 
-        # Re-read the classified transactions for verification
-        tx_ids = [c['id'] for c in classifications]
-        txs = UnifiedTransaction.objects.filter(user=user, id__in=tx_ids)
         verifier_data = [
             {
                 'id': tx.id,
@@ -139,7 +169,7 @@ class EnrichmentAgent(BaseAgent):
                 'business_personal': tx.business_personal,
                 'tva_deductible': tx.tva_deductible,
             }
-            for tx in txs
+            for tx in low_conf
         ]
 
         prompt = ENRICHMENT_VERIFIER_PROMPT.format(
