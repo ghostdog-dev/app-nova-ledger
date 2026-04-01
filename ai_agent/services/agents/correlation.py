@@ -1,58 +1,38 @@
 """
-Correlation Agent — the core of the pipeline.
+Correlation Agent — groups UnifiedTransactions into TransactionClusters.
 
-Groups UnifiedTransactions into TransactionClusters.
-Any source can match any other source (no email-hub limitation).
-
-Worker: Sonnet (complex multi-source reasoning)
-Verifier: Sonnet (complex correlation audit)
+Uses pre-fetched context + single-shot structured output instead of agentic loop.
+Worker: Haiku (pattern matching on pre-fetched data)
+Verifier: Haiku (independent audit of recent clusters)
 """
 import json
 import logging
 
 from django.conf import settings
-from django.db.models import Count
 
 from ai_agent.models import UnifiedTransaction, TransactionCluster
 from ai_agent.services.agents.base import BaseAgent, AgentResult
-from ai_agent.services.normalization import normalize_vendor
-from ai_agent.services.tools import (
-    THINK_TOOL, SEARCH_TRANSACTIONS_TOOL, CREATE_CLUSTER_TOOL,
-    ADD_TO_CLUSTER_TOOL, FLAG_CONTRADICTION_TOOL,
-    make_tool_handlers,
-)
 
 logger = logging.getLogger(__name__)
 
 CORRELATION_SYSTEM_PROMPT = (
-    "You are a financial data correlation expert. Your job is to group related "
-    "transactions from DIFFERENT sources into clusters representing the SAME "
-    "business operation.\n\n"
-    "SOURCES: stripe (payment processor revenue), mollie (payment processor), "
-    "paypal (payments), bank_api (bank debits/credits), bank_import (uploaded bank statements), "
-    "email (invoices, receipts, shipping notifications).\n\n"
-    "WORKFLOW for each vendor group:\n"
-    "1. ALWAYS call 'think' first to analyze the transactions and plan your approach.\n"
-    "2. Call 'search_transactions' to find related transactions across sources.\n"
-    "3. Group related transactions into clusters using 'create_cluster'.\n"
-    "4. Add confirmations/enrichments to existing clusters with 'add_to_cluster'.\n"
-    "5. Flag contradictions with 'flag_contradiction'.\n\n"
-    "CORRELATION RULES:\n"
-    "- Same reference (invoice/order number) across sources \u2192 SAME cluster\n"
-    "- Same vendor + same amount + date within 5 days \u2192 likely SAME cluster\n"
-    "- Stripe charge + bank credit of same amount + 2-3 day lag \u2192 SAME (payout settlement)\n"
-    "- Email invoice + bank debit of same amount/vendor \u2192 SAME cluster\n"
-    "- Shipping email (no amount) + order email from same vendor \u2192 SAME cluster\n"
-    "- Provider fee (Stripe fee, PayPal fee) \u2192 separate cluster type='fee'\n\n"
-    "DO NOT CLUSTER:\n"
-    "- Different amounts on different dates from same vendor = different transactions\n"
-    "- Different order/invoice numbers = different transactions, PERIOD\n"
-    "- Recurring subscriptions: each month is a SEPARATE cluster\n\n"
-    "EVIDENCE ROLES when adding to clusters:\n"
-    "- 'confirmation': same data from different source (increases confidence)\n"
-    "- 'enrichment': adds missing info (items, tax details, tracking number)\n"
-    "- 'contradiction': conflicts with existing data (different amount, etc.)\n\n"
-    "Process ALL transactions. Be thorough but precise."
+    "Tu es un expert en rapprochement de données financières. "
+    "On te donne des transactions non-clusterisées et des clusters existants.\n\n"
+    "RÈGLES:\n"
+    "- Même référence (facture/commande) = même cluster\n"
+    "- Même vendor + même montant + date à 5 jours près = même cluster\n"
+    "- Stripe charge + bank credit même montant + 2-3j = même cluster (payout)\n"
+    "- Email facture + débit bancaire même montant/vendor = même cluster\n"
+    "- Commandes différentes (numéros différents) = clusters séparés\n"
+    "- Abonnements récurrents: chaque mois = cluster séparé\n\n"
+    "ACTIONS:\n"
+    "- new_clusters: grouper des transactions non-clusterisées ensemble\n"
+    "- add_to_existing: ajouter une transaction à un cluster existant\n"
+    "- contradictions: signaler des incohérences\n\n"
+    "Retourne JSON: {\"new_clusters\": [{\"label\": ..., \"cluster_type\": \"sale|purchase|subscription|refund|transfer|other\", "
+    "\"transaction_ids\": [...], \"reasoning\": ...}], "
+    "\"add_to_existing\": [{\"cluster_id\": ..., \"transaction_id\": ..., \"evidence_role\": \"confirmation|enrichment|contradiction\"}], "
+    "\"contradictions\": [{\"transaction_id\": ..., \"description\": ...}]}"
 )
 
 CORRELATION_VERIFIER_PROMPT = (
@@ -74,99 +54,159 @@ class CorrelationAgent(BaseAgent):
     def __init__(self, client=None):
         super().__init__(
             client=client,
-            model=getattr(settings, 'AI_MODEL_CORRELATION', 'claude-sonnet-4-5-20250929'),
+            model='claude-haiku-4-5-20251001',
         )
-        self.verifier_model = getattr(settings, 'AI_MODEL_CORRELATION', 'claude-sonnet-4-5-20250929')
+        self.verifier_model = 'claude-haiku-4-5-20251001'
 
     def execute(self, user, context: dict) -> AgentResult:
-        # Get unclustered transactions
         unclustered = UnifiedTransaction.objects.filter(user=user, cluster__isnull=True)
-
         if not unclustered.exists():
             return AgentResult(success=True, items_processed=0)
 
-        handlers = make_tool_handlers(user)
-        tools = [
-            THINK_TOOL, SEARCH_TRANSACTIONS_TOOL, CREATE_CLUSTER_TOOL,
-            ADD_TO_CLUSTER_TOOL, FLAG_CONTRADICTION_TOOL,
-        ]
-
-        # Group by normalized vendor name for efficient processing
+        # Group by normalized vendor
         vendor_groups = {}
         for tx in unclustered:
             key = tx.vendor_name_normalized or 'unknown'
             vendor_groups.setdefault(key, []).append(tx)
 
-        clusters_created = 0
-        total_processed = 0
-
-        # Process vendor groups in batches
+        # Process in batches of ~50 transactions
+        batch = []
         batch_vendors = []
-        batch_txs = []
+        clusters_created = 0
+        vendor_keys = list(vendor_groups.keys())
 
-        for vendor, txs in vendor_groups.items():
+        for vendor in vendor_keys:
+            txs = vendor_groups[vendor]
+            batch.extend(txs)
             batch_vendors.append(vendor)
-            batch_txs.extend(txs)
 
-            # Process when batch is big enough or last vendor
-            if len(batch_txs) >= 30 or vendor == list(vendor_groups.keys())[-1]:
+            if len(batch) >= 50 or vendor == vendor_keys[-1]:
+                # Pre-fetch existing clustered transactions for these vendors
+                existing = UnifiedTransaction.objects.filter(
+                    user=user,
+                    cluster__isnull=False,
+                    vendor_name_normalized__in=batch_vendors,
+                ).select_related('cluster')[:100]
+
+                existing_data = [
+                    {
+                        'id': tx.id,
+                        'vendor': tx.vendor_name,
+                        'amount': str(tx.amount),
+                        'date': str(tx.transaction_date),
+                        'source': tx.source_type,
+                        'cluster_id': tx.cluster_id,
+                        'cluster_label': tx.cluster.label if tx.cluster else None,
+                    }
+                    for tx in existing
+                ]
+
                 batch_data = [
                     {
                         'id': tx.id,
                         'source_type': tx.source_type,
                         'direction': tx.direction,
                         'vendor_name': tx.vendor_name,
-                        'vendor_normalized': tx.vendor_name_normalized,
                         'amount': str(tx.amount) if tx.amount else None,
                         'currency': tx.currency,
                         'transaction_date': str(tx.transaction_date) if tx.transaction_date else None,
                         'reference': tx.reference,
-                        'description': tx.description[:80],
+                        'description': tx.description[:100] if tx.description else '',
                         'category': tx.category,
                     }
-                    for tx in batch_txs
+                    for tx in batch
                 ]
 
-                user_msg = (
-                    f"Correlate these {len(batch_data)} unclustered transactions "
-                    f"from vendors: {', '.join(batch_vendors)}.\n"
-                    f"Also search for existing clustered transactions that these might match.\n\n"
-                    f"Transactions:\n{json.dumps(batch_data, ensure_ascii=False)}"
+                # Single LLM call with structured output
+                user_msg = json.dumps(
+                    {'unclustered': batch_data, 'existing_clusters': existing_data},
+                    ensure_ascii=False,
                 )
 
                 try:
-                    messages, stats = self._run_agentic_loop(
-                        system=CORRELATION_SYSTEM_PROMPT,
+                    response = self._call_llm_sync(
+                        system=[{
+                            'type': 'text',
+                            'text': CORRELATION_SYSTEM_PROMPT,
+                            'cache_control': {'type': 'ephemeral'},
+                        }],
                         messages=[{'role': 'user', 'content': user_msg}],
-                        tools=tools,
-                        tool_handlers=handlers,
-                        max_iterations=len(batch_txs) + 10,
+                        max_tokens=8192,
                     )
-                    total_processed += len(batch_txs)
+
+                    text = self._extract_text(response)
+                    result = self._extract_json(text)
+
+                    if result:
+                        clusters_created += self._apply_results(user, result)
                 except Exception as e:
                     logger.error(f'[Correlation] Batch error: {e}')
 
+                batch = []
                 batch_vendors = []
-                batch_txs = []
 
-        # Count clusters created
-        clusters_created = TransactionCluster.objects.filter(
-            user=user, created_by='ai_agent'
-        ).count()
-
-        # Run verifier
+        # Verifier
         corrections = self.run_verifier(user, [], context)
         if corrections:
             self._apply_corrections(user, corrections)
 
         return AgentResult(
             success=True,
-            items_processed=total_processed,
+            items_processed=unclustered.count(),
             stats={
                 'clusters_created': clusters_created,
                 'corrections': len(corrections),
             },
         )
+
+    def _apply_results(self, user, result):
+        clusters_created = 0
+
+        # Create new clusters
+        for cluster_data in result.get('new_clusters', []):
+            tx_ids = cluster_data.get('transaction_ids', [])
+            txs = UnifiedTransaction.objects.filter(user=user, id__in=tx_ids)
+            if not txs.exists():
+                continue
+            cluster = TransactionCluster.objects.create(
+                user=user,
+                label=cluster_data.get('label', ''),
+                cluster_type=cluster_data.get('cluster_type', 'other'),
+                match_reasoning=cluster_data.get('reasoning', ''),
+                created_by='ai_agent',
+            )
+            txs.update(cluster=cluster)
+            cluster.recalculate_metrics()
+            clusters_created += 1
+
+        # Add to existing clusters
+        for addition in result.get('add_to_existing', []):
+            try:
+                cluster = TransactionCluster.objects.get(
+                    id=addition['cluster_id'], user=user,
+                )
+                tx = UnifiedTransaction.objects.get(
+                    id=addition['transaction_id'], user=user,
+                )
+                tx.cluster = cluster
+                tx.evidence_role = addition.get('evidence_role', 'confirmation')
+                tx.save()
+                cluster.recalculate_metrics()
+            except (TransactionCluster.DoesNotExist, UnifiedTransaction.DoesNotExist):
+                pass
+
+        # Flag contradictions
+        for flag in result.get('contradictions', []):
+            try:
+                tx = UnifiedTransaction.objects.get(
+                    id=flag['transaction_id'], user=user,
+                )
+                tx.evidence_role = 'contradiction'
+                tx.save()
+            except UnifiedTransaction.DoesNotExist:
+                pass
+
+        return clusters_created
 
     def run_verifier(self, user, results: list, context: dict) -> list:
         recent_clusters = TransactionCluster.objects.filter(
@@ -200,7 +240,7 @@ class CorrelationAgent(BaseAgent):
             })
 
         prompt = CORRELATION_VERIFIER_PROMPT.format(
-            clusters=json.dumps(clusters_data, ensure_ascii=False)
+            clusters=json.dumps(clusters_data, ensure_ascii=False),
         )
 
         try:
@@ -235,7 +275,7 @@ class CorrelationAgent(BaseAgent):
 
             elif action == 'split' and tx_ids:
                 UnifiedTransaction.objects.filter(
-                    user=user, id__in=tx_ids
+                    user=user, id__in=tx_ids,
                 ).update(cluster=None)
                 if cluster_id:
                     try:
