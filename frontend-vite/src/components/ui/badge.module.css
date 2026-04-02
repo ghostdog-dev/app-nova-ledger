@@ -1,0 +1,73 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Variants */
+.default {
+  background-color: var(--color-bg-alt);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+.success {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.warning {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+
+.error {
+  background-color: var(--color-error-bg);
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+.info {
+  background-color: var(--color-bg-active);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+/* Dot */
+.dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 0;
+}
+
+.dotDefault {
+  background-color: var(--color-text);
+}
+
+.dotSuccess {
+  background-color: var(--color-success);
+}
+
+.dotWarning {
+  background-color: var(--color-warning);
+}
+
+.dotError {
+  background-color: var(--color-error);
+}
+
+.dotInfo {
+  background-color: var(--color-text);
+}

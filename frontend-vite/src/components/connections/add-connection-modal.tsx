@@ -401,12 +401,12 @@ export function AddConnectionModal({ open, onClose, onSuccess }: AddConnectionMo
               {selectedService.authMethod === 'file_upload' && (
                 <div className={styles.apiKeyGroup}>
                   <p style={{ fontSize: '0.875rem', opacity: 0.7, marginBottom: '0.75rem' }}>
-                    Importez votre relev\u00e9 bancaire (CSV, OFX, QFX ou XML)
+                    Importez votre relevé bancaire (CSV, OFX, QFX, XML ou PDF)
                   </p>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".csv,.ofx,.qfx,.xml"
+                    accept=".csv,.ofx,.qfx,.xml,.pdf"
                     style={{ display: 'none' }}
                     onChange={(e) => {
                       if (e.target.files?.[0]) setSelectedFile(e.target.files[0]);
@@ -438,9 +438,14 @@ export function AddConnectionModal({ open, onClose, onSuccess }: AddConnectionMo
                       Importer {selectedFile.name}
                     </Button>
                   )}
-                  {uploadResult && (
+                  {uploadResult && uploadResult.rowsImported > 0 && (
                     <Alert variant="success" style={{ marginTop: '0.75rem' }}>
-                      {uploadResult.rowsImported} lignes import\u00e9es{uploadResult.bankName ? ` (${uploadResult.bankName})` : ''}
+                      {uploadResult.rowsImported} lignes importées{uploadResult.bankName ? ` (${uploadResult.bankName})` : ''}
+                    </Alert>
+                  )}
+                  {uploadResult && uploadResult.rowsImported === 0 && (
+                    <Alert variant="info" style={{ marginTop: '0.75rem' }}>
+                      Fichier reçu, traitement en cours par l'IA. Consultez la page Connections pour suivre l'état.
                     </Alert>
                   )}
                 </div>

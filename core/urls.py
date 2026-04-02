@@ -57,6 +57,7 @@ urlpatterns = [
 
     # Unified transactions
     path('companies/<uuid:company_pk>/unified-transactions/', unified_transactions.UnifiedTransactionListView.as_view(), name='unified-transactions-list'),
+    path('companies/<uuid:company_pk>/unified-stats/', unified_transactions.UnifiedStatsView.as_view(), name='unified-stats'),
 
     # Clusters
     path('companies/<uuid:company_pk>/clusters/', clusters.ClusterListView.as_view(), name='clusters-list'),

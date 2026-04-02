@@ -1,0 +1,59 @@
+/* ============================================================
+   Quick Actions Widget — Nova Editorial Design (Mobile-First)
+   ============================================================ */
+
+/* Mobile: vertical stack (1 column). Tablet+: 2-column grid */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  border-top: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
+}
+
+@media (min-width: 640px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.actionBtn {
+  justify-content: flex-start;
+  text-align: left;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.75rem;
+  min-height: 2.75rem;
+  transition: background-color 0.3s ease;
+}
+
+@media (min-width: 640px) {
+  .actionBtn {
+    padding: 0.75rem;
+  }
+}
+
+.actionBtn:hover {
+  background-color: var(--color-bg-alt);
+}
+
+.actionLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+@media (min-width: 640px) {
+  .actionLabel {
+    font-size: 0.75rem;
+  }
+}
+
+.iconMd {
+  width: 1.25rem;
+  height: 1.25rem;
+}

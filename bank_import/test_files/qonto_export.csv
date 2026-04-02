@@ -1,0 +1,15 @@
+Date,Counterparty,Amount,Currency,Category,Status,Reference
+2026-03-15,Stripe Payments,1234.56,EUR,Income,Completed,TR-20260315-001
+2026-03-14,OVH SAS,-45.99,EUR,Hosting,Completed,TR-20260314-001
+2026-03-13,Amazon Web Services,-189.00,EUR,Cloud Services,Completed,TR-20260313-001
+2026-03-12,PayPal Europe,567.89,EUR,Income,Completed,TR-20260312-001
+2026-03-11,Mollie Payments BV,2456.78,EUR,Income,Completed,TR-20260311-001
+2026-03-10,URSSAF Ile-de-France,-1245.00,EUR,Taxes & Social,Completed,TR-20260310-001
+2026-03-09,Google Ireland Ltd,-178.50,EUR,Advertising,Completed,TR-20260309-001
+2026-03-08,Scaleway SAS,-29.00,EUR,Hosting,Completed,TR-20260308-001
+2026-03-07,Client - Dupont Jean,3200.00,EUR,Income,Completed,TR-20260307-001
+2026-03-06,Adobe Systems,-59.99,EUR,Software,Completed,TR-20260306-001
+2026-03-05,Stripe Payments,876.50,EUR,Income,Completed,TR-20260305-001
+2026-03-04,Notion Labs Inc,-96.00,EUR,Software,Completed,TR-20260304-001
+2026-03-03,GoCardless Ltd,345.00,EUR,Income,Completed,TR-20260303-001
+2026-03-02,EDF,-156.30,EUR,Utilities,Completed,TR-20260302-001

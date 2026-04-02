@@ -119,7 +119,39 @@ def connection_data_view(request, company_pk, connection_pk):
     if provider == 'woocommerce':
         return _handle_woocommerce(provider, service_type, last_sync, user, request)
 
+    # ── Banking (file imports) ─────────────────────────────────
+    if provider == 'bank_import':
+        return _handle_bank_import(provider, service_type, last_sync, user, request)
+
     return _empty_response(provider, service_type, last_sync, request)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Bank Import
+# ═══════════════════════════════════════════════════════════════
+
+def _handle_bank_import(provider, service_type, last_sync, user, request):
+    from ai_agent.models import UnifiedTransaction
+    qs = UnifiedTransaction.objects.filter(
+        user=user, source_type='bank_import',
+    ).order_by('-transaction_date')
+
+    items_page, pagination = _paginate(qs, request)
+    items = [
+        {
+            'id': tx.id,
+            'date': tx.transaction_date.isoformat() if tx.transaction_date else '',
+            'description': tx.vendor_name or tx.description,
+            'amount': str(tx.amount) if tx.amount else '0',
+            'currency': tx.currency,
+            'direction': tx.direction,
+            'category': tx.category,
+            'source': 'bank_import',
+        }
+        for tx in items_page
+    ]
+    columns = ['date', 'description', 'amount', 'currency', 'direction']
+    return _response(provider, service_type, last_sync, items, pagination, columns)
 
 
 # ═══════════════════════════════════════════════════════════════

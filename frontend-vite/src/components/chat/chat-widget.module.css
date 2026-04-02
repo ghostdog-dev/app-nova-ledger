@@ -1,0 +1,319 @@
+/* ============================================================
+   Chat Widget — Mobile-first responsive
+   - Mobile (<640px): full-screen overlay
+   - Tablet (640px–1023px): slide-up panel, width 100%, max-height 70vh
+   - Desktop (1024px+): fixed bottom-right panel
+   ============================================================ */
+
+/* --- FAB Button --- */
+.fabBtn {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 50;
+  display: flex;
+  width: 3.5rem;
+  height: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-inverted-bg);
+  color: var(--color-text-on-inverted);
+  border: 1px solid var(--color-inverted-bg);
+  border-radius: 0;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+@media (min-width: 1024px) {
+  .fabBtn {
+    bottom: 1.5rem;
+    right: 1.5rem;
+  }
+}
+
+.fabBtn:hover {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #F5F2EB;
+}
+
+.fabHidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.9);
+}
+
+.fabIcon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* --- Panel: mobile full-screen by default --- */
+.panel {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  background-color: var(--color-bg-elevated);
+  border-radius: 0;
+  box-shadow: none;
+  transition: all 0.3s ease;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  max-width: none;
+}
+
+/* Tablet: slide-up panel from bottom */
+@media (min-width: 640px) {
+  .panel {
+    inset: auto 0 0 0;
+    width: 100%;
+    height: auto;
+    max-height: 70vh;
+    border: 1px solid var(--color-border);
+    border-bottom: none;
+  }
+}
+
+/* Desktop: fixed bottom-right panel */
+@media (min-width: 1024px) {
+  .panel {
+    inset: auto;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    left: auto;
+    top: auto;
+    width: 24rem;
+    max-width: 24rem;
+    height: 600px;
+    max-height: 680px;
+    border: 1px solid var(--color-border);
+  }
+}
+
+.panelOpen {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.panelClosed {
+  transform: translateY(1rem);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* --- Panel Header --- */
+.panelHeader {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.75rem 1rem;
+  background-color: var(--color-bg);
+  /* Safe area for mobile notch */
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.panelHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.avatar {
+  display: flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-inverted-bg);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--color-text-on-inverted);
+  border-radius: 0;
+}
+
+.panelTitle {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.panelStatus {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  line-height: 1;
+}
+
+.panelHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.headerBtn {
+  padding: 0.5rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-light);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+@media (min-width: 640px) {
+  .headerBtn {
+    padding: 0.375rem;
+    min-width: 0;
+    min-height: 0;
+  }
+}
+
+.headerBtn:hover {
+  color: var(--color-text);
+  background-color: var(--color-bg-alt);
+}
+
+.headerBtnIcon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+@media (min-width: 640px) {
+  .headerBtnIcon {
+    width: 1rem;
+    height: 1rem;
+  }
+}
+
+/* --- Connection Warning --- */
+.connectionWarning {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--color-border-light);
+  background-color: var(--color-error-bg);
+  padding: 0.5rem 1rem;
+}
+
+.connectionWarningIcon {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+.connectionWarningText {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+/* --- Messages Area --- */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background-color: var(--color-bg-elevated);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* --- Input Area --- */
+.inputArea {
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border);
+  padding: 0.75rem;
+  background-color: var(--color-bg);
+  /* Safe area for mobile home indicator */
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.inputWrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border-light);
+  background-color: var(--color-bg);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0;
+  transition: border-color var(--transition);
+}
+
+.inputWrap:focus-within {
+  border-color: var(--color-border);
+}
+
+.textarea {
+  flex: 1;
+  resize: none;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 1rem; /* 16px prevents iOS zoom */
+  color: var(--color-text);
+  border: none;
+  outline: none;
+  max-height: 7rem;
+}
+
+@media (min-width: 640px) {
+  .textarea {
+    font-size: 0.875rem;
+  }
+}
+
+.textarea::placeholder {
+  color: var(--color-text-light);
+}
+
+.sendBtn {
+  flex-shrink: 0;
+  display: flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-inverted-bg);
+  color: var(--color-text-on-inverted);
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+@media (min-width: 640px) {
+  .sendBtn {
+    width: 2rem;
+    height: 2rem;
+  }
+}
+
+.sendBtn:hover {
+  background-color: var(--color-accent);
+  color: #F5F2EB;
+}
+
+.sendBtn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.sendBtnIcon {
+  width: 1rem;
+  height: 1rem;
+}

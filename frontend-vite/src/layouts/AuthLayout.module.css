@@ -1,0 +1,100 @@
+/* ============================================================
+   Auth Layout — Nova Editorial Design
+   Mobile-first responsive auth layout
+   ============================================================ */
+
+/* --- Container ---
+   Mobile: full width, 1rem horizontal padding */
+.container {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-bg);
+  padding: 2rem 1rem;
+}
+
+/* --- Brand --- */
+.brand {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.brandTitle {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  font-weight: 700;
+  font-style: italic;
+  color: var(--color-text);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+
+.brandAccent {
+  font-style: italic;
+  color: var(--color-accent);
+}
+
+.brandSub {
+  margin-top: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* --- Auth Card ---
+   Mobile: full width, compact padding */
+.card {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-elevated);
+  padding: 1.5rem 1rem;
+}
+
+/* --- Copyright --- */
+.copyright {
+  margin-top: 2rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ---- Tablet (640px) ---- */
+@media (min-width: 640px) {
+  .container {
+    padding: 3rem 1.5rem;
+  }
+
+  .brand {
+    margin-bottom: 2.5rem;
+  }
+
+  .brandTitle {
+    font-size: 2.5rem;
+  }
+
+  .card {
+    max-width: 480px;
+    padding: 2.5rem 2rem;
+  }
+
+  .copyright {
+    margin-top: 2.5rem;
+  }
+}
+
+/* ---- Desktop (1024px) ---- */
+@media (min-width: 1024px) {
+  .container {
+    padding: 3rem 1rem;
+  }
+
+  .card {
+    max-width: 28rem;
+  }
+}

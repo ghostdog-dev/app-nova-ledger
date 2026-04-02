@@ -1,26 +1,38 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, CalendarRange, Loader2, Server, Zap } from 'lucide-react';
-import { clsx } from 'clsx';
+import { ArrowLeft, Zap, Loader2, Check, AlertTriangle, Database } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import { getConnections } from '@/hooks/use-connections';
-import { createExecution } from '@/hooks/use-executions';
 import { useCompanyStore } from '@/stores/company-store';
-import { getStoredAccessToken } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 import type { ServiceConnection } from '@/types';
 import styles from './NewExecutionPage.module.css';
 import { useNavigate } from 'react-router-dom';
 
+const SOURCE_COLORS: Record<string, string> = {
+  stripe: '#635BFF', mollie: '#FF6B6B', paypal: '#0070BA',
+  gmail: '#EA4335', outlook: '#0078D4', bank_import: '#10B981',
+  qonto: '#4B32C3', gocardless: '#1D4ED8',
+};
 
-interface FormErrors {
-  dateFrom?: string;
-  dateTo?: string;
-  services?: string;
+interface PipelineStats {
+  ingestion?: { success: boolean; items_processed: number; duration_seconds: number };
+  enrichment?: { success: boolean; items_processed: number; duration_seconds: number };
+  correlation?: { success: boolean; items_processed: number; clusters_created: number; duration_seconds: number };
+  computation?: { success: boolean; items_processed: number; duration_seconds: number };
+  verification?: { success: boolean; items_processed: number; anomalies_total: number; duration_seconds: number };
 }
+
+const PHASE_LABELS: Record<string, string> = {
+  ingestion: 'Ingestion des sources',
+  enrichment: 'Enrichissement comptable',
+  correlation: 'Corrélation multi-source',
+  computation: 'Calculs financiers',
+  verification: 'Vérification qualité',
+};
 
 export default function NewExecutionPage() {
   const { t } = useTranslation();
@@ -30,235 +42,147 @@ export default function NewExecutionPage() {
   const [connections, setConnections] = useState<ServiceConnection[]>([]);
   const [isLoadingConnections, setIsLoadingConnections] = useState(true);
 
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
-
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Unified pipeline state
-  const [isRunningUnified, setIsRunningUnified] = useState(false);
-  const [unifiedResult, setUnifiedResult] = useState<{ stats: unknown } | null>(null);
-  const [unifiedError, setUnifiedError] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [result, setResult] = useState<{ status: string; stats: PipelineStats } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeCompany) return;
     getConnections()
-      .then((data) => {
-        const active = data.filter((c) => c.status === 'active');
-        setConnections(active);
-        // Pre-select all active connections
-        setSelectedServices(active.map((c) => c.publicId));
-      })
+      .then((data) => setConnections(data.filter((c) => c.status === 'active')))
       .catch(() => setConnections([]))
       .finally(() => setIsLoadingConnections(false));
   }, [activeCompany]);
 
-  const toggleService = useCallback((id: string) => {
-    setSelectedServices((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-    );
-  }, []);
-
-  const handleUnifiedPipeline = async () => {
-    setIsRunningUnified(true);
-    setUnifiedResult(null);
-    setUnifiedError(null);
+  const handleLaunch = async () => {
+    setIsRunning(true);
+    setError(null);
     try {
-      const token = getStoredAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const response = await fetch('/api/ai/unified-pipeline/', {
-        method: 'POST',
-        headers,
-        credentials: 'include',
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.detail || `HTTP ${response.status}`);
-      }
-      const data = await response.json();
-      setUnifiedResult(data);
-    } catch (err) {
-      setUnifiedError(err instanceof Error ? err.message : t('errors.unknown'));
-    } finally {
-      setIsRunningUnified(false);
-    }
-  };
-
-  const validate = (): boolean => {
-    const errs: FormErrors = {};
-    if (!dateFrom) errs.dateFrom = t('executions.form.validation.dateFromRequired');
-    if (!dateTo) errs.dateTo = t('executions.form.validation.dateToRequired');
-    if (dateFrom && dateTo && dateTo < dateFrom)
-      errs.dateTo = t('executions.form.validation.dateRangeInvalid');
-    if (selectedServices.length === 0)
-      errs.services = t('executions.form.validation.servicesRequired');
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
-
-    setIsSubmitting(true);
-    setSubmitError(null);
-    try {
-      const execution = await createExecution({
-        dateFrom,
-        dateTo,
-        includedConnections: selectedServices,
-      });
-      navigate(`/executions/${execution.publicId}`);
-    } catch {
-      setSubmitError(t('errors.unknown'));
-      setIsSubmitting(false);
+      await apiClient.post(`${window.location.origin}/api/ai/unified-pipeline/`);
+      navigate('/executions');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : (err as { message?: string })?.message || t('errors.unknown');
+      setError(msg);
+      setIsRunning(false);
     }
   };
 
   return (
     <div className={styles.page}>
-      {/* Page header */}
+      {/* Header */}
       <div className={styles.headerRow}>
         <Button variant="ghost" size="sm" leftIcon={<ArrowLeft className={styles.iconSm} />} onClick={() => navigate('/executions')}>
           {t('common.back')}
         </Button>
         <div>
-          <h1 className={styles.title}>{t('executions.form.title')}</h1>
-          <p className={styles.subtitle}>{t('executions.form.subtitle')}</p>
+          <h1 className={styles.title}>Nouvelle analyse</h1>
+          <p className={styles.subtitle}>Lancer le pipeline unifié sur toutes vos sources connectées</p>
         </div>
       </div>
 
-      {/* Unified pipeline */}
+      {/* Connected sources */}
       <Card padding="md">
         <div className={styles.sectionHeader}>
-          <Zap className={styles.sectionIcon} aria-hidden="true" />
-          <h2 className={styles.sectionTitle}>Pipeline Unifie</h2>
+          <Database className={styles.sectionIcon} />
+          <h2 className={styles.sectionTitle}>Sources connectées</h2>
         </div>
-        <p className={styles.sectionHint}>
-          Ingestion, enrichissement, correlation, calcul et verification automatiques de toutes vos sources connectees.
-        </p>
-        <Button
-          onClick={handleUnifiedPipeline}
-          disabled={isRunningUnified}
-          leftIcon={isRunningUnified ? <Loader2 className={clsx(styles.iconSm, styles.spin)} /> : <Zap className={styles.iconSm} />}
-          isLoading={isRunningUnified}
-        >
-          {isRunningUnified ? 'Pipeline en cours...' : 'Lancer le pipeline unifie'}
-        </Button>
-        {unifiedResult && (
-          <Alert variant="success" className={styles.unifiedResult}>
-            Termine — {JSON.stringify(unifiedResult.stats)}
-          </Alert>
-        )}
-        {unifiedError && (
-          <Alert variant="error" onClose={() => setUnifiedError(null)}>
-            {unifiedError}
-          </Alert>
+        {isLoadingConnections ? (
+          <div className={styles.loadingCenter}><Spinner size="sm" /></div>
+        ) : connections.length === 0 ? (
+          <p style={{ opacity: 0.6, fontSize: '0.85rem' }}>
+            Aucune source connectée. Ajoutez des services dans la page Connections.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {connections.map((conn) => (
+              <span key={conn.publicId} style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                padding: '0.4rem 0.75rem', borderRadius: '0.5rem',
+                background: 'rgba(255,255,255,0.05)', fontSize: '0.8rem',
+              }}>
+                <span style={{
+                  width: '8px', height: '8px', borderRadius: '50%',
+                  background: SOURCE_COLORS[conn.providerName] ?? '#6B7280',
+                }} />
+                {conn.providerName}
+                <Check size={12} style={{ color: '#10B981' }} />
+              </span>
+            ))}
+          </div>
         )}
       </Card>
 
-      {submitError && (
-        <Alert variant="error" onClose={() => setSubmitError(null)}>
-          {submitError}
-        </Alert>
+      {/* Launch button */}
+      <Card padding="md">
+        <div className={styles.sectionHeader}>
+          <Zap className={styles.sectionIcon} />
+          <h2 className={styles.sectionTitle}>Pipeline unifié</h2>
+        </div>
+        <p style={{ opacity: 0.6, fontSize: '0.85rem', marginBottom: '1rem' }}>
+          5 phases automatiques : ingestion de toutes les sources → enrichissement comptable (PCG, TVA) →
+          corrélation multi-source → calculs financiers → vérification qualité.
+        </p>
+        <Button
+          onClick={handleLaunch}
+          disabled={isRunning}
+          leftIcon={isRunning ? <Loader2 className={styles.iconSm} style={{ animation: 'spin 1s linear infinite' }} /> : <Zap className={styles.iconSm} />}
+          fullWidth
+        >
+          {isRunning ? 'Analyse en cours... (peut prendre quelques minutes)' : 'Lancer l\'analyse'}
+        </Button>
+      </Card>
+
+      {/* Error */}
+      {error && (
+        <Alert variant="error" onClose={() => setError(null)}>{error}</Alert>
       )}
 
-      <form onSubmit={handleSubmit} noValidate className={styles.form}>
-        {/* Date range */}
+      {/* Results */}
+      {result && (
         <Card padding="md">
-          <div className={styles.sectionHeader}>
-            <CalendarRange className={styles.sectionIcon} aria-hidden="true" />
-            <h2 className={styles.sectionTitle}>
-              {t('executions.form.dateRange')}
-            </h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+            <Check size={20} style={{ color: '#10B981' }} />
+            <h2 style={{ fontWeight: 600 }}>Analyse terminée</h2>
           </div>
-          <div className={styles.dateGrid}>
-            <Input
-              type="date"
-              label={t('executions.form.dateFrom')}
-              value={dateFrom}
-              onChange={(e) => { setDateFrom(e.target.value); setErrors((p) => ({ ...p, dateFrom: undefined })); }}
-              error={errors.dateFrom}
-              max={dateTo || undefined}
-            />
-            <Input
-              type="date"
-              label={t('executions.form.dateTo')}
-              value={dateTo}
-              onChange={(e) => { setDateTo(e.target.value); setErrors((p) => ({ ...p, dateTo: undefined })); }}
-              error={errors.dateTo}
-              min={dateFrom || undefined}
-            />
-          </div>
-        </Card>
 
-        {/* Connections */}
-        <Card padding="md">
-          <div className={styles.sectionHeader}>
-            <Server className={styles.sectionIcon} aria-hidden="true" />
-            <h2 className={styles.sectionTitle}>
-              {t('executions.form.services')}
-            </h2>
-          </div>
-          <p className={styles.sectionHint}>{t('executions.form.servicesHint')}</p>
-
-          {isLoadingConnections ? (
-            <div className={styles.loadingCenter}>
-              <Spinner size="sm" />
-            </div>
-          ) : connections.length === 0 ? (
-            <p className={styles.noServices}>{t('executions.form.noServices')}</p>
-          ) : (
-            <div className={styles.servicesList}>
-              {connections.map((conn) => {
-                const checked = selectedServices.includes(conn.publicId);
-                return (
-                  <label
-                    key={conn.publicId}
-                    className={clsx(
-                      styles.serviceLabel,
-                      checked && styles.serviceLabelChecked
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {Object.entries(PHASE_LABELS).map(([phase, label]) => {
+              const phaseStats = result.stats[phase as keyof PipelineStats];
+              if (!phaseStats) return null;
+              const ok = phaseStats.success;
+              const duration = (phaseStats as { duration_seconds?: number }).duration_seconds;
+              return (
+                <div key={phase} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '0.5rem 0.75rem', borderRadius: '0.5rem',
+                  background: ok ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {ok ? <Check size={14} style={{ color: '#10B981' }} /> : <AlertTriangle size={14} style={{ color: '#EF4444' }} />}
+                    <span style={{ fontSize: '0.85rem' }}>{label}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.75rem', opacity: 0.6 }}>
+                    <span>{phaseStats.items_processed} traités</span>
+                    {(phaseStats as { clusters_created?: number }).clusters_created != null && (
+                      <span>{(phaseStats as { clusters_created: number }).clusters_created} clusters</span>
                     )}
-                  >
-                    <input
-                      type="checkbox"
-                      className={styles.serviceCheckbox}
-                      checked={checked}
-                      onChange={() => {
-                        toggleService(conn.publicId);
-                        setErrors((p) => ({ ...p, services: undefined }));
-                      }}
-                    />
-                    <span className={styles.serviceName}>
-                      {conn.providerName}
-                    </span>
-                    <span className={styles.serviceType}>
-                      {conn.serviceType}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
-          {errors.services && (
-            <p className={styles.fieldError}>{errors.services}</p>
-          )}
-        </Card>
+                    {(phaseStats as { anomalies_total?: number }).anomalies_total != null && (
+                      <span>{(phaseStats as { anomalies_total: number }).anomalies_total} anomalies</span>
+                    )}
+                    {duration != null && <span>{duration < 1 ? '<1s' : `${Math.round(duration)}s`}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
-        {/* Actions */}
-        <div className={styles.actions}>
-          <Button variant="ghost" onClick={() => navigate('/executions')} disabled={isSubmitting}>
-            {t('executions.form.cancel')}
-          </Button>
-          <Button type="submit" isLoading={isSubmitting}>
-            {t('executions.form.submit')}
-          </Button>
-        </div>
-      </form>
+          <div style={{ marginTop: '1rem' }}>
+            <Button size="sm" onClick={() => navigate('/transactions')} leftIcon={<Database className={styles.iconSm} />}>
+              Voir le rapport comptable
+            </Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

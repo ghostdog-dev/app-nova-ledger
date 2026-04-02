@@ -319,7 +319,7 @@
 }
 
 .expandedDetailOpen {
-  max-height: 12rem;
+  max-height: 30rem;
   opacity: 1;
 }
 
@@ -544,9 +544,15 @@
     order: unset;
   }
 
-  .expandedDetail,
+  .expandedDetail {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+  }
+
   .expandedDetailOpen {
-    display: none;
+    max-height: 30rem;
+    opacity: 1;
   }
 
   .rowGroup {

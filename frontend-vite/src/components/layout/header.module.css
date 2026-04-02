@@ -1,0 +1,315 @@
+/* ============================================================
+   Header — Nova Editorial Design
+   Mobile-first responsive header
+   ============================================================ */
+
+/* --- Header bar ---
+   Mobile: compact, 4rem height, 1rem padding */
+.header {
+  display: flex;
+  height: 4rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border-light);
+  background-color: var(--color-bg);
+  padding: 0 0.75rem;
+}
+
+/* --- Mobile Menu Toggle ---
+   Visible on mobile/tablet, hidden on desktop */
+.mobileToggle {
+  padding: 0.5rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  transition: color 0.3s ease;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.mobileToggle:hover {
+  color: var(--color-text);
+}
+
+/* --- Spacer --- */
+.spacer {
+  flex: 1;
+}
+
+/* --- Actions ---
+   Mobile: tighter gap, compact sizing */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* --- Dropdown Button ---
+   Mobile: smaller padding for compact layout */
+.dropdownBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.375rem;
+  min-height: 2.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.3s ease;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.dropdownBtn:hover {
+  background-color: var(--color-bg-alt);
+  color: var(--color-text);
+}
+
+/* --- Overlay --- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+/* --- Dropdown --- */
+.dropdown {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  margin-top: 0.25rem;
+  width: 10rem;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-elevated);
+  padding: 0.25rem 0;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Dropdown Item --- */
+.dropdownItem {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  min-height: 2.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  transition: all 0.3s ease;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+@media (min-width: 640px) {
+  .dropdownItem {
+    padding: 0.5rem 0.75rem;
+    min-height: 0;
+  }
+}
+
+.dropdownItem:hover {
+  background-color: var(--color-bg-alt);
+  color: var(--color-text);
+}
+
+/* --- Avatar --- */
+.avatar {
+  display: flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-inverted-bg);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--color-text-on-inverted);
+}
+
+/* --- User Name ---
+   Hidden on mobile and tablet, shown on desktop */
+.userName {
+  display: none;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+/* --- User Menu Header --- */
+.userMenuHeader {
+  border-bottom: 1px solid var(--color-border-light);
+  padding: 0.5rem 0.75rem;
+}
+
+.userMenuName {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.userMenuEmail {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Divider --- */
+.divider {
+  margin: 0.25rem 0;
+  border-top: 1px solid var(--color-border-light);
+}
+
+/* --- Logout --- */
+.logoutItem {
+  color: var(--color-error);
+}
+
+.logoutItem:hover {
+  background-color: var(--color-error-bg);
+}
+
+.logoutItem:disabled {
+  opacity: 0.5;
+}
+
+/* --- Icon Styles --- */
+.iconMuted {
+  color: var(--color-text-light);
+}
+
+/* --- User Dropdown --- */
+.userDropdown {
+  width: 12rem;
+}
+
+/* --- Relative --- */
+.relative {
+  position: relative;
+}
+
+/* --- User Button ---
+   Mobile: compact padding */
+.userBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem;
+  min-height: 2.75rem;
+  font-size: 0.8rem;
+  transition: all 0.3s ease;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.userBtn:hover {
+  background-color: var(--color-bg-alt);
+}
+
+/* --- Small Icons --- */
+.chevron {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--color-text-light);
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .chevron {
+    display: block;
+  }
+}
+
+.toggleIcon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.langIcon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.langChevron {
+  width: 0.875rem;
+  height: 0.875rem;
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .langChevron {
+    display: block;
+  }
+}
+
+/* ---- Tablet (640px) ---- */
+@media (min-width: 640px) {
+  .header {
+    padding: 0 1.5rem;
+  }
+
+  .actions {
+    gap: 0.5rem;
+  }
+
+  .mobileToggle {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .dropdownBtn {
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    min-height: 0;
+  }
+
+  .avatar {
+    width: 2rem;
+    height: 2rem;
+    font-size: 0.75rem;
+  }
+
+  .userBtn {
+    gap: 0.5rem;
+    padding: 0.5rem;
+    min-height: 0;
+  }
+}
+
+/* ---- Desktop (1024px) ---- */
+@media (min-width: 1024px) {
+  .mobileToggle {
+    display: none;
+  }
+
+  .userName {
+    display: block;
+  }
+}

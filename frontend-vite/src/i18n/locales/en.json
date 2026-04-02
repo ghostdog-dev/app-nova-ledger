@@ -1,0 +1,417 @@
+{
+  "common": {
+    "appName": "Nova Ledger",
+    "tagline": "Smart reconciliation",
+    "save": "Save",
+    "cancel": "Cancel",
+    "submit": "Submit",
+    "delete": "Delete",
+    "edit": "Edit",
+    "view": "View",
+    "close": "Close",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "success": "Success",
+    "back": "Back",
+    "continue": "Continue",
+    "or": "or",
+    "yes": "Yes",
+    "no": "No",
+    "never": "Never",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "refresh": "Refresh",
+    "test": "Test",
+    "optional": "optional",
+    "step": "Step {current} of {total}"
+  },
+  "auth": {
+    "login": {
+      "title": "Sign in",
+      "subtitle": "Access your reconciliation workspace",
+      "email": "Email address",
+      "emailPlaceholder": "you@example.com",
+      "password": "Password",
+      "passwordPlaceholder": "••••••••",
+      "rememberMe": "Remember me",
+      "forgotPassword": "Forgot password?",
+      "submit": "Sign in",
+      "noAccount": "Don't have an account?",
+      "registerLink": "Sign up",
+      "orContinueWith": "Or continue with",
+      "withGoogle": "Continue with Google",
+      "withMicrosoft": "Continue with Microsoft",
+      "registeredSuccess": "Account created! Check your email to activate your account."
+    },
+    "register": {
+      "title": "Create an account",
+      "subtitle": "Automate your invoice/payment reconciliation",
+      "firstName": "First name",
+      "firstNamePlaceholder": "John",
+      "lastName": "Last name",
+      "lastNamePlaceholder": "Doe",
+      "email": "Email address",
+      "emailPlaceholder": "you@example.com",
+      "password": "Password",
+      "passwordPlaceholder": "At least 8 characters",
+      "confirmPassword": "Confirm password",
+      "confirmPasswordPlaceholder": "Repeat your password",
+      "submit": "Create account",
+      "hasAccount": "Already have an account?",
+      "loginLink": "Sign in",
+      "orContinueWith": "Or continue with",
+      "withGoogle": "Continue with Google",
+      "withMicrosoft": "Continue with Microsoft",
+      "termsInfo": "By signing up, you agree to our terms of service and privacy policy."
+    },
+    "validation": {
+      "emailRequired": "Email address is required",
+      "emailInvalid": "Email address is not valid",
+      "passwordRequired": "Password is required",
+      "passwordTooShort": "Password must be at least 12 characters",
+      "firstNameRequired": "First name is required",
+      "lastNameRequired": "Last name is required",
+      "confirmPasswordRequired": "Password confirmation is required",
+      "passwordMismatch": "Passwords do not match"
+    }
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "connections": "Connections",
+    "executions": "Executions",
+    "transactions": "Transactions",
+    "settings": "Settings",
+    "profile": "Profile",
+    "logout": "Sign out"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Overview of your reconciliations",
+    "connectedServices": "Connected services",
+    "lastExecution": "Last execution",
+    "noExecution": "No execution launched",
+    "noExecutionDescription": "Connect your services then launch your first analysis.",
+    "startExecution": "Start analysis",
+    "alerts": "Alerts",
+    "noAlerts": "No active alerts",
+    "reconciliationRate": "Reconciliation rate",
+    "totalInvoices": "Invoices processed",
+    "anomalies": "Anomalies detected",
+    "viewAllConnections": "View all connections",
+    "viewAllAlerts": "View alerts",
+    "noConnectedServices": "No connected services",
+    "addFirstService": "Add a service",
+    "executionProgress": "Analysis in progress…",
+    "executionCompleted": "Analysis completed",
+    "executionFailed": "Analysis failed",
+    "invoicesProcessed": "invoices processed",
+    "correlationsFound": "correlations found",
+    "anomaliesFound": "anomalies detected",
+    "noCompanyTitle": "No company selected",
+    "noCompanyMessage": "Create or select a company to access the dashboard.",
+    "createCompany": "Create a company"
+  },
+  "transactions": {
+    "title": "Transactions",
+    "subtitle": "Complete history of invoice / payment correlations",
+    "tableTitle": "All transactions"
+  },
+  "connections": {
+    "title": "Connections",
+    "subtitle": "Manage your invoicing, payment and email services",
+    "addConnection": "Add connection",
+    "noConnections": "No connected services",
+    "noConnectionsDescription": "Connect your services to start reconciling invoices and payments.",
+    "status": {
+      "active": "Active",
+      "expired": "Expired",
+      "error": "Error"
+    },
+    "types": {
+      "invoicing": "Invoicing",
+      "payment": "Payment",
+      "email": "Email"
+    },
+    "authMethods": {
+      "oauth": "OAuth",
+      "apikey": "API Key"
+    },
+    "lastSync": "Last sync",
+    "connectedOn": "Connected on",
+    "manage": "Manage",
+    "disconnect": "Disconnect",
+    "disconnectConfirm": "Are you sure you want to disconnect {service}? Collected data will be kept.",
+    "disconnectSuccess": "{service} disconnected successfully",
+    "refreshToken": "Refresh token",
+    "refreshSuccess": "Token refreshed successfully",
+    "testConnection": "Test connection",
+    "testSuccess": "Connection active",
+    "testFailed": "Connection failed",
+    "addModal": {
+      "title": "Add a connection",
+      "step1Title": "Service type",
+      "step1Subtitle": "What type of service do you want to connect?",
+      "step2Title": "Choose service",
+      "step2Subtitle": "Select your {type} service",
+      "step3Title": "Connect",
+      "step3OAuthSubtitle": "Click the button to authenticate via {service}",
+      "step3ApiSubtitle": "Enter your {service} API key",
+      "connectOAuth": "Connect with {service}",
+      "apiKeyLabel": "API Key",
+      "apiKeyPlaceholder": "sk_live_...",
+      "apiKeyHelp": "Find your API key in your {service} account settings.",
+      "connectApiKey": "Connect",
+      "oauthInfo": "You will be redirected to {service} to authorize access. Only billing data is read.",
+      "successTitle": "Service connected!",
+      "successMessage": "{service} has been successfully connected.",
+      "back": "Back",
+      "next": "Next",
+      "selectType": "Select"
+    },
+    "filterAll": "All",
+    "filterInvoicing": "Invoicing",
+    "filterPayment": "Payment",
+    "filterEmail": "Email",
+    "connectedCount": "{count} service connected",
+    "connectedCountPlural": "{count} services connected"
+  },
+  "executions": {
+    "title": "Executions",
+    "subtitle": "History of your reconciliation analyses",
+    "newExecution": "New analysis",
+    "noExecutions": "No executions",
+    "noExecutionsDescription": "Launch your first reconciliation analysis.",
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
+    "period": "Period",
+    "viewResults": "View results",
+    "rerun": "Re-run",
+    "delete": "Delete",
+    "form": {
+      "title": "New analysis",
+      "subtitle": "Configure your reconciliation parameters",
+      "dateRange": "Analysis period",
+      "dateFrom": "From",
+      "dateTo": "To",
+      "services": "Services to include",
+      "servicesHint": "Select which services to use for this analysis",
+      "noServices": "No connected services. Add a service first.",
+      "submit": "Start analysis",
+      "cancel": "Cancel",
+      "validation": {
+        "dateFromRequired": "Start date is required",
+        "dateToRequired": "End date is required",
+        "dateRangeInvalid": "End date must be after start date",
+        "servicesRequired": "Select at least one service"
+      }
+    },
+    "progress": {
+      "title": "Analysis in progress",
+      "steps": {
+        "triage": "Email triage",
+        "extraction": "Data extraction",
+        "merge": "Transaction merging",
+        "computation": "Tax computation (VAT, excl./incl.)",
+        "bank_correlation": "Bank reconciliation",
+        "provider_correlation": "Provider reconciliation",
+        "report": "Report generation"
+      },
+      "wsConnected": "Live",
+      "wsPolling": "Updating…"
+    },
+    "results": {
+      "title": "Results",
+      "subtitle": "Analysis from {dateFrom} to {dateTo}",
+      "summary": {
+        "invoicesProcessed": "Invoices processed",
+        "correlationsFound": "Correlations",
+        "anomaliesDetected": "Anomalies",
+        "reconciliationRate": "Reconciliation rate"
+      },
+      "table": {
+        "invoice": "Invoice",
+        "date": "Date",
+        "vendor": "Vendor/Client",
+        "amountHt": "Amount (excl. tax)",
+        "amountTtc": "Amount (incl. tax)",
+        "payment": "Payment",
+        "paymentDate": "Payment date",
+        "paidAmount": "Paid amount",
+        "method": "Method",
+        "status": "Status",
+        "confidence": "Confidence",
+        "actions": "Actions"
+      },
+      "filters": {
+        "all": "All",
+        "reconciled": "Reconciled",
+        "reconciled_with_alert": "With alert",
+        "unpaid": "Unpaid",
+        "orphan_payment": "Orphan",
+        "uncertain": "Uncertain"
+      },
+      "search": "Search (invoice, vendor…)",
+      "noResults": "No correlations found",
+      "noResultsFiltered": "No results for this filter",
+      "editCorrelation": "Correct",
+      "viewDetails": "Details",
+      "exportSection": "Export results"
+    },
+    "correlation": {
+      "detailTitle": "Correlation detail",
+      "invoiceSection": "Invoice",
+      "paymentSection": "Payment",
+      "matchSection": "Match",
+      "editTitle": "Correct correlation",
+      "editHint": "You can force the association between this invoice and another payment.",
+      "paymentIdLabel": "Payment ID",
+      "paymentIdPlaceholder": "PAY-2026-001",
+      "annotationLabel": "Note (optional)",
+      "annotationPlaceholder": "Reason for correction…",
+      "saveEdit": "Save correction",
+      "cancelEdit": "Cancel",
+      "isEdited": "Manually corrected"
+    },
+    "correlationStatus": {
+      "reconciled": "Reconciled",
+      "reconciled_with_alert": "Reconciled (alert)",
+      "alert": "Alert",
+      "unpaid": "Unpaid",
+      "unreconciled": "Unreconciled",
+      "orphan_payment": "Orphan payment",
+      "uncertain": "Uncertain"
+    },
+    "export": {
+      "csv": "CSV",
+      "excel": "Excel",
+      "pdf": "PDF (report)",
+      "json": "JSON",
+      "downloading": "Downloading…"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage your preferences and account",
+    "language": "Language",
+    "languageDescription": "Choose the interface language",
+    "profile": "Profile",
+    "security": "Security",
+    "notifications": "Notifications",
+    "plan": "Plan",
+    "company": "Company",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "email": "Email address",
+    "saveProfile": "Save changes",
+    "preferences": "Preferences",
+    "csvSeparator": "CSV separator",
+    "emailNotifications": "Email notifications",
+    "emailNotificationsHint": "Receive an email when an analysis is complete",
+    "danger": "Danger zone",
+    "deleteAccount": "Delete account",
+    "deleteAccountDescription": "This action is irreversible. All your data will be deleted.",
+    "deleteAccountConfirm": "Enter your email address to confirm",
+    "companyName": "Company name",
+    "siret": "SIRET",
+    "saveCompany": "Save company",
+    "saved": "Saved"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "No notifications",
+    "markAllRead": "Mark all as read",
+    "types": {
+      "execution_completed": "Analysis complete",
+      "execution_failed": "Analysis failed",
+      "token_expired": "Token expired",
+      "anomaly_detected": "Anomaly detected"
+    }
+  },
+  "chat": {
+    "title": "AI Assistant",
+    "newConversation": "New conversation",
+    "close": "Close",
+    "placeholder": "Ask a question…",
+    "send": "Send",
+    "thinking": "Thinking…",
+    "suggestions": {
+      "title": "How can I help you?",
+      "items": [
+        "What invoices are unpaid?",
+        "How many orphan payments?",
+        "What is the reconciliation rate?",
+        "Show anomalies from the last analysis"
+      ]
+    }
+  },
+  "plans": {
+    "title": "Plans & Billing",
+    "subtitle": "Manage your subscription and usage",
+    "current": "Current plan",
+    "upgrade": "Upgrade",
+    "downgrade": "Downgrade",
+    "changeSuccess": "Plan updated successfully",
+    "free": {
+      "name": "Free"
+    },
+    "plan1": {
+      "name": "Plan 1"
+    },
+    "plan2": {
+      "name": "Plan 2"
+    }
+  },
+  "usage": {
+    "title": "Usage",
+    "executions": "Analyses",
+    "connections": "Connections",
+    "members": "Members",
+    "seeAllPlans": "View plans"
+  },
+  "quota": {
+    "exceeded": "Quota exceeded",
+    "detail": "{resource} limit reached ({current}/{max})",
+    "upgradeLink": "Upgrade your plan"
+  },
+  "company": {
+    "switcher": "Switch company",
+    "create": "New company",
+    "manage": "Manage company",
+    "noCompanies": "No companies",
+    "active": "Active",
+    "members": "Members",
+    "invite": "Invite member",
+    "inviteEmail": "Email address",
+    "deleteCompany": "Delete company",
+    "deleteCompanyDescription": "This action is irreversible. The company and all its data will be permanently deleted.",
+    "deleteCompanyConfirm": "Type the company name to confirm",
+    "roles": {
+      "owner": "Owner",
+      "admin": "Admin",
+      "member": "Member"
+    }
+  },
+  "header": {
+    "language": "Language",
+    "myAccount": "My account",
+    "profile": "Profile",
+    "settings": "Settings",
+    "logout": "Sign out",
+    "loggingOut": "Signing out..."
+  },
+  "sidebar": {
+    "collapse": "Collapse",
+    "expand": "Expand"
+  },
+  "errors": {
+    "401": "Session expired. Please sign in again.",
+    "429": "Too many requests. Please wait.",
+    "500": "Server error. Please try again.",
+    "network": "Network error. Check your connection.",
+    "unknown": "An unexpected error occurred."
+  }
+}

@@ -1,0 +1,65 @@
+/* ============================================================
+   Footer — Nova Editorial Design (App Context)
+   Mobile-first responsive footer
+   ============================================================ */
+
+/* --- Footer ---
+   Mobile: centered, stacked */
+.footer {
+  border-top: 1px solid var(--color-border-light);
+  background-color: var(--color-bg);
+  padding: 1rem;
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+
+.links {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.link {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.link:hover {
+  color: var(--color-text);
+}
+
+/* ---- Tablet (640px) ---- */
+@media (min-width: 640px) {
+  .footer {
+    padding: 1rem 1.5rem;
+  }
+
+  .inner {
+    flex-direction: row;
+    justify-content: space-between;
+    text-align: left;
+  }
+}
+
+/* ---- Desktop (1024px) ---- */
+@media (min-width: 1024px) {
+  .footer {
+    padding: 1rem 2rem;
+  }
+}

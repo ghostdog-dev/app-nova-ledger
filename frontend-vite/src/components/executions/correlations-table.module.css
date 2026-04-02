@@ -1,0 +1,562 @@
+/* ============================================================
+   Correlations Table — Mobile-first responsive hybrid table
+   ============================================================ */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* --- Filter bar --- */
+
+.filterBar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.searchWrap {
+  width: 100%;
+}
+
+.filterNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--color-border);
+}
+
+.filterBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: none;
+  border-right: 1px solid var(--color-border-light);
+  padding: 0.5rem 0.5rem;
+  min-height: 2.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--color-bg);
+  cursor: pointer;
+  transition: all var(--transition);
+  border-radius: 0;
+}
+
+.filterBtn:last-child {
+  border-right: none;
+}
+
+.filterBtn:hover:not(.filterBtnActive) {
+  background-color: var(--color-bg-alt);
+}
+
+.filterBtnActive {
+  border-color: var(--color-inverted-bg);
+  background-color: var(--color-inverted-bg);
+  color: var(--color-text-on-inverted);
+}
+
+.filterBtnCount {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+/* --- Table wrapper --- */
+
+.tableWrap {
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-elevated);
+  border-radius: 0;
+}
+
+/* --- Desktop-only: native table --- */
+
+.table {
+  display: none;
+}
+
+/* --- Mobile card list --- */
+
+.mobileList {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobileRowGroup {
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.mobileRowGroup:last-child {
+  border-bottom: none;
+}
+
+/* --- Mobile row (summary line) --- */
+
+.mobileRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  cursor: pointer;
+  transition: background-color var(--transition);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.mobileRow:hover {
+  background-color: var(--color-bg);
+}
+
+.mobileExpandBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  color: var(--color-text-light);
+  transition: color 0.2s;
+}
+
+.mobileExpandBtn:hover {
+  color: var(--color-text);
+}
+
+.expandChevron {
+  width: 0.875rem;
+  height: 0.875rem;
+  transition: transform 0.2s ease;
+}
+
+.expandChevronOpen {
+  transform: rotate(180deg);
+}
+
+/* --- Mobile primary columns --- */
+
+.mobilePrimaryCols {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.125rem 0.75rem;
+  align-items: center;
+}
+
+.mobileInvoiceRef {
+  flex: 1 1 100%;
+  font-weight: 500;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobilePaymentRef {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 10rem;
+}
+
+.mobileAmount {
+  font-size: 0.8125rem;
+  color: var(--color-text);
+  font-weight: 500;
+  margin-left: auto;
+}
+
+.mobileScore {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.mobileScoreMiniBar {
+  height: 0.25rem;
+  width: 2rem;
+  overflow: hidden;
+  background-color: var(--color-bg-alt);
+  border-radius: 0;
+}
+
+.mobileScoreText {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+/* --- Mobile expanded detail --- */
+
+.mobileExpandedDetail {
+  overflow: hidden;
+  transition: max-height 0.25s ease, opacity 0.2s ease;
+  max-height: 0;
+  opacity: 0;
+}
+
+.mobileExpandedDetailOpen {
+  max-height: 24rem;
+  opacity: 1;
+}
+
+.mobileExpandedDetailInner {
+  padding: 0.5rem 0.75rem 0.75rem 2.75rem;
+  border-top: 1px solid var(--color-border-light);
+  background: var(--color-bg-alt);
+}
+
+.mobileDetailRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.mobileDetailRow span:first-child {
+  flex-shrink: 0;
+}
+
+.mobileDetailRow span:last-child {
+  color: var(--color-text);
+  font-weight: 500;
+  text-align: right;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+
+.mobileActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.mobileActionBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.625rem;
+  min-height: 2.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  background: none;
+  border: 1px solid var(--color-border-light);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.mobileActionBtn:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+/* --- Shared mini bar fills --- */
+
+.miniBarFillGreen {
+  height: 100%;
+  background-color: var(--color-teal);
+}
+
+.miniBarFillAmber {
+  height: 100%;
+  background-color: var(--color-accent);
+}
+
+.miniBarFillRed {
+  height: 100%;
+  background-color: var(--color-accent);
+}
+
+/* --- Empty state --- */
+
+.mobileEmpty {
+  padding: 3rem 1rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+}
+
+/* --- Edited mark --- */
+
+.editedMark {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--color-teal);
+  flex-shrink: 0;
+}
+
+/* --- Row count --- */
+
+.rowCount {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* --- Action icon --- */
+
+.actionIcon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* ============================================================
+   Tablet (640px+)
+   ============================================================ */
+
+@media (min-width: 640px) {
+  .wrap {
+    gap: 1rem;
+  }
+
+  .filterBar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .searchWrap {
+    flex: 1;
+    min-width: 12rem;
+    width: auto;
+  }
+
+  .filterBtn {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.75rem;
+    min-height: 0;
+  }
+
+  .mobileExpandBtn {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+  .mobileRow {
+    padding: 0.75rem 1rem;
+  }
+
+  .mobileExpandedDetailInner {
+    padding-left: 3rem;
+    padding-right: 1rem;
+  }
+}
+
+/* ============================================================
+   Desktop (1024px+) — switch to native table
+   ============================================================ */
+
+@media (min-width: 1024px) {
+  .tableWrap {
+    overflow-x: auto;
+  }
+
+  .mobileList {
+    display: none;
+  }
+
+  .table {
+    display: table;
+    min-width: 100%;
+    border-collapse: collapse;
+  }
+
+  .thead {
+    background-color: var(--color-inverted-bg);
+  }
+
+  .th {
+    white-space: nowrap;
+    padding: 0.75rem;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-on-inverted);
+    cursor: pointer;
+    user-select: none;
+    transition: color var(--transition);
+  }
+
+  .th:hover {
+    color: var(--color-bg-alt);
+  }
+
+  .thStatic {
+    white-space: nowrap;
+    padding: 0.75rem;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-on-inverted);
+  }
+
+  .thRight {
+    text-align: right;
+  }
+
+  .thInner {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .sortIcon {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .sortIconDefault {
+    color: var(--color-text-light);
+  }
+
+  .sortIconActive {
+    color: var(--color-text-on-inverted);
+  }
+
+  .tbody {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .tr {
+    transition: background-color var(--transition);
+  }
+
+  .tr:hover {
+    background-color: var(--color-bg);
+  }
+
+  .trManual {
+    background-color: var(--color-bg);
+  }
+
+  .trBorder {
+    border-bottom: 1px solid var(--color-border-light);
+  }
+
+  .td {
+    padding: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+  }
+
+  .tdInvoice {
+    font-weight: 500;
+    color: var(--color-text);
+  }
+
+  .tdDate {
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
+  .tdVendor {
+    color: var(--color-text);
+    max-width: 8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tdMono {
+    color: var(--color-text);
+    white-space: nowrap;
+  }
+
+  .tdMuted {
+    color: var(--color-text-muted);
+  }
+
+  .invoiceCell {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .confidenceCell {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .miniBar {
+    height: 0.375rem;
+    width: 4rem;
+    overflow: hidden;
+    background-color: var(--color-bg-alt);
+    border-radius: 0;
+  }
+
+  .scoreText {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+  }
+
+  .actionsCell {
+    padding: 0.75rem;
+  }
+
+  .actionsInner {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity var(--transition);
+  }
+
+  .tr:hover .actionsInner {
+    opacity: 1;
+  }
+
+  .actionBtn {
+    padding: 0.25rem;
+    color: var(--color-text-light);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+
+  .actionBtn:hover {
+    background-color: var(--color-bg-alt);
+    color: var(--color-text);
+  }
+
+  .emptyCell {
+    padding: 3rem 0;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    color: var(--color-text-light);
+  }
+}

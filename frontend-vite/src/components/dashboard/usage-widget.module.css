@@ -1,0 +1,145 @@
+/* ============================================================
+   Usage Widget — Nova Editorial Design (Mobile-First)
+   ============================================================ */
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.plansLink {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color 0.3s ease;
+  text-decoration: none;
+  white-space: nowrap;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (min-width: 640px) {
+  .plansLink {
+    min-height: 0;
+  }
+}
+
+@media (min-width: 640px) {
+  .plansLink {
+    font-size: 0.75rem;
+  }
+}
+
+.plansLink:hover {
+  color: var(--color-text);
+}
+
+/* --- Gauges Row ---
+   Mobile: stack vertically
+   Tablet+: horizontal row
+--- */
+.gaugesRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  padding-top: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .gaugesRow {
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 0;
+  }
+}
+
+.gauge {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .gauge {
+    flex-direction: column;
+    width: auto;
+  }
+}
+
+.gaugeCircle {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.gaugeSvg {
+  transform: rotate(-90deg);
+}
+
+.gaugeTrack {
+  fill: none;
+  stroke: var(--color-bg-alt);
+}
+
+.gaugeIcon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-light);
+}
+
+/* --- Gauge Label --- */
+.gaugeLabel {
+  text-align: left;
+}
+
+@media (min-width: 640px) {
+  .gaugeLabel {
+    text-align: center;
+  }
+}
+
+.gaugeCurrent {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.gaugeLimit {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-text-light);
+}
+
+.gaugeName {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: 0.125rem;
+}
+
+/* --- Transition Utility --- */
+.transitionAll {
+  transition: all 0.7s ease;
+}
+
+/* --- Icon Sizes --- */
+.iconSm {
+  width: 1rem;
+  height: 1rem;
+}

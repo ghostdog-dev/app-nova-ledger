@@ -1,0 +1,417 @@
+{
+  "common": {
+    "appName": "Nova Ledger",
+    "tagline": "Réconciliation intelligente",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "submit": "Soumettre",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "view": "Voir",
+    "close": "Fermer",
+    "loading": "Chargement...",
+    "error": "Une erreur est survenue",
+    "success": "Succès",
+    "back": "Retour",
+    "continue": "Continuer",
+    "or": "ou",
+    "yes": "Oui",
+    "no": "Non",
+    "never": "Jamais",
+    "connect": "Connecter",
+    "disconnect": "Déconnecter",
+    "refresh": "Actualiser",
+    "test": "Tester",
+    "optional": "optionnel",
+    "step": "Étape {current} sur {total}"
+  },
+  "auth": {
+    "login": {
+      "title": "Connexion",
+      "subtitle": "Accédez à votre espace de réconciliation",
+      "email": "Adresse email",
+      "emailPlaceholder": "vous@exemple.com",
+      "password": "Mot de passe",
+      "passwordPlaceholder": "••••••••",
+      "rememberMe": "Se souvenir de moi",
+      "forgotPassword": "Mot de passe oublié ?",
+      "submit": "Se connecter",
+      "noAccount": "Pas encore de compte ?",
+      "registerLink": "S'inscrire",
+      "orContinueWith": "Ou continuer avec",
+      "withGoogle": "Continuer avec Google",
+      "withMicrosoft": "Continuer avec Microsoft",
+      "registeredSuccess": "Compte créé ! Vérifiez votre email pour activer votre compte."
+    },
+    "register": {
+      "title": "Créer un compte",
+      "subtitle": "Automatisez votre réconciliation factures/paiements",
+      "firstName": "Prénom",
+      "firstNamePlaceholder": "Jean",
+      "lastName": "Nom",
+      "lastNamePlaceholder": "Dupont",
+      "email": "Adresse email",
+      "emailPlaceholder": "vous@exemple.com",
+      "password": "Mot de passe",
+      "passwordPlaceholder": "8 caractères minimum",
+      "confirmPassword": "Confirmer le mot de passe",
+      "confirmPasswordPlaceholder": "Répétez votre mot de passe",
+      "submit": "Créer mon compte",
+      "hasAccount": "Déjà un compte ?",
+      "loginLink": "Se connecter",
+      "orContinueWith": "Ou continuer avec",
+      "withGoogle": "Continuer avec Google",
+      "withMicrosoft": "Continuer avec Microsoft",
+      "termsInfo": "En vous inscrivant, vous acceptez nos conditions d'utilisation et notre politique de confidentialité."
+    },
+    "validation": {
+      "emailRequired": "L'adresse email est requise",
+      "emailInvalid": "L'adresse email n'est pas valide",
+      "passwordRequired": "Le mot de passe est requis",
+      "passwordTooShort": "Le mot de passe doit contenir au moins 12 caractères",
+      "firstNameRequired": "Le prénom est requis",
+      "lastNameRequired": "Le nom est requis",
+      "confirmPasswordRequired": "La confirmation du mot de passe est requise",
+      "passwordMismatch": "Les mots de passe ne correspondent pas"
+    }
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "connections": "Connexions",
+    "executions": "Exécutions",
+    "transactions": "Transactions",
+    "settings": "Paramètres",
+    "profile": "Profil",
+    "logout": "Déconnexion"
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "subtitle": "Vue d'ensemble de vos réconciliations",
+    "connectedServices": "Services connectés",
+    "lastExecution": "Dernière exécution",
+    "noExecution": "Aucune exécution lancée",
+    "noExecutionDescription": "Connectez vos services puis lancez votre première analyse.",
+    "startExecution": "Lancer une analyse",
+    "alerts": "Alertes",
+    "noAlerts": "Aucune alerte active",
+    "reconciliationRate": "Taux de réconciliation",
+    "totalInvoices": "Factures traitées",
+    "anomalies": "Anomalies détectées",
+    "viewAllConnections": "Voir toutes les connexions",
+    "viewAllAlerts": "Voir les alertes",
+    "noConnectedServices": "Aucun service connecté",
+    "addFirstService": "Ajouter un service",
+    "executionProgress": "Analyse en cours…",
+    "executionCompleted": "Analyse terminée",
+    "executionFailed": "Analyse échouée",
+    "invoicesProcessed": "factures traitées",
+    "correlationsFound": "corrélations trouvées",
+    "anomaliesFound": "anomalies détectées",
+    "noCompanyTitle": "Aucune entreprise sélectionnée",
+    "noCompanyMessage": "Créez ou sélectionnez une entreprise pour accéder au tableau de bord.",
+    "createCompany": "Créer une entreprise"
+  },
+  "transactions": {
+    "title": "Transactions",
+    "subtitle": "Historique complet des correlations factures / paiements",
+    "tableTitle": "Toutes les transactions"
+  },
+  "connections": {
+    "title": "Connexions",
+    "subtitle": "Gérez vos services de facturation, paiement et email",
+    "addConnection": "Ajouter une connexion",
+    "noConnections": "Aucun service connecté",
+    "noConnectionsDescription": "Connectez vos services pour commencer à réconcilier vos factures et paiements.",
+    "status": {
+      "active": "Actif",
+      "expired": "Expiré",
+      "error": "Erreur"
+    },
+    "types": {
+      "invoicing": "Facturation",
+      "payment": "Paiement",
+      "email": "Email"
+    },
+    "authMethods": {
+      "oauth": "OAuth",
+      "apikey": "Clé API"
+    },
+    "lastSync": "Dernière sync",
+    "connectedOn": "Connecté le",
+    "manage": "Gérer",
+    "disconnect": "Déconnecter",
+    "disconnectConfirm": "Êtes-vous sûr de vouloir déconnecter {service} ? Les données collectées seront conservées.",
+    "disconnectSuccess": "{service} déconnecté avec succès",
+    "refreshToken": "Renouveler le token",
+    "refreshSuccess": "Token renouvelé avec succès",
+    "testConnection": "Tester la connexion",
+    "testSuccess": "Connexion active",
+    "testFailed": "Connexion échouée",
+    "addModal": {
+      "title": "Ajouter une connexion",
+      "step1Title": "Type de service",
+      "step1Subtitle": "Quel type de service souhaitez-vous connecter ?",
+      "step2Title": "Choisir le service",
+      "step2Subtitle": "Sélectionnez votre service {type}",
+      "step3Title": "Connexion",
+      "step3OAuthSubtitle": "Cliquez sur le bouton pour vous authentifier via {service}",
+      "step3ApiSubtitle": "Entrez votre clé API {service}",
+      "connectOAuth": "Se connecter avec {service}",
+      "apiKeyLabel": "Clé API",
+      "apiKeyPlaceholder": "sk_live_...",
+      "apiKeyHelp": "Trouvez votre clé API dans les paramètres de votre compte {service}.",
+      "connectApiKey": "Connecter",
+      "oauthInfo": "Vous serez redirigé vers {service} pour autoriser l'accès. Seules les données de facturation sont lues.",
+      "successTitle": "Service connecté !",
+      "successMessage": "{service} a été connecté avec succès.",
+      "back": "Retour",
+      "next": "Suivant",
+      "selectType": "Sélectionner"
+    },
+    "filterAll": "Tous",
+    "filterInvoicing": "Facturation",
+    "filterPayment": "Paiement",
+    "filterEmail": "Email",
+    "connectedCount": "{count} service connecté",
+    "connectedCountPlural": "{count} services connectés"
+  },
+  "executions": {
+    "title": "Exécutions",
+    "subtitle": "Historique de vos analyses de réconciliation",
+    "newExecution": "Nouvelle analyse",
+    "noExecutions": "Aucune exécution",
+    "noExecutionsDescription": "Lancez votre première analyse de réconciliation.",
+    "status": {
+      "pending": "En attente",
+      "running": "En cours",
+      "completed": "Terminé",
+      "failed": "Échoué"
+    },
+    "period": "Période",
+    "viewResults": "Voir les résultats",
+    "rerun": "Relancer",
+    "delete": "Supprimer",
+    "form": {
+      "title": "Nouvelle analyse",
+      "subtitle": "Configurez les paramètres de votre réconciliation",
+      "dateRange": "Période d'analyse",
+      "dateFrom": "Du",
+      "dateTo": "Au",
+      "services": "Services à inclure",
+      "servicesHint": "Sélectionnez les services à utiliser pour cette analyse",
+      "noServices": "Aucun service connecté. Ajoutez d'abord un service.",
+      "submit": "Lancer l'analyse",
+      "cancel": "Annuler",
+      "validation": {
+        "dateFromRequired": "La date de début est requise",
+        "dateToRequired": "La date de fin est requise",
+        "dateRangeInvalid": "La date de fin doit être après la date de début",
+        "servicesRequired": "Sélectionnez au moins un service"
+      }
+    },
+    "progress": {
+      "title": "Analyse en cours",
+      "steps": {
+        "triage": "Tri des emails",
+        "extraction": "Extraction des données",
+        "merge": "Fusion des transactions",
+        "computation": "Calculs (TVA, HT, TTC)",
+        "bank_correlation": "Rapprochement bancaire",
+        "provider_correlation": "Rapprochement fournisseurs",
+        "report": "Génération du rapport"
+      },
+      "wsConnected": "Temps réel",
+      "wsPolling": "Mise à jour…"
+    },
+    "results": {
+      "title": "Résultats",
+      "subtitle": "Analyse du {dateFrom} au {dateTo}",
+      "summary": {
+        "invoicesProcessed": "Factures traitées",
+        "correlationsFound": "Corrélations",
+        "anomaliesDetected": "Anomalies",
+        "reconciliationRate": "Taux de réconciliation"
+      },
+      "table": {
+        "invoice": "Facture",
+        "date": "Date",
+        "vendor": "Fournisseur/Client",
+        "amountHt": "Montant HT",
+        "amountTtc": "Montant TTC",
+        "payment": "Paiement",
+        "paymentDate": "Date paiement",
+        "paidAmount": "Montant payé",
+        "method": "Méthode",
+        "status": "Statut",
+        "confidence": "Confiance",
+        "actions": "Actions"
+      },
+      "filters": {
+        "all": "Tous",
+        "reconciled": "Réconcilié",
+        "reconciled_with_alert": "Avec alerte",
+        "unpaid": "Impayé",
+        "orphan_payment": "Orphelin",
+        "uncertain": "Incertain"
+      },
+      "search": "Rechercher (facture, fournisseur…)",
+      "noResults": "Aucune corrélation trouvée",
+      "noResultsFiltered": "Aucun résultat pour ce filtre",
+      "editCorrelation": "Corriger",
+      "viewDetails": "Détails",
+      "exportSection": "Exporter les résultats"
+    },
+    "correlation": {
+      "detailTitle": "Détail de la corrélation",
+      "invoiceSection": "Facture",
+      "paymentSection": "Paiement",
+      "matchSection": "Correspondance",
+      "editTitle": "Corriger la corrélation",
+      "editHint": "Vous pouvez forcer l'association entre cette facture et un autre paiement.",
+      "paymentIdLabel": "Identifiant du paiement",
+      "paymentIdPlaceholder": "PAY-2026-001",
+      "annotationLabel": "Note (optionnelle)",
+      "annotationPlaceholder": "Raison de la correction…",
+      "saveEdit": "Enregistrer la correction",
+      "cancelEdit": "Annuler",
+      "isEdited": "Corrigé manuellement"
+    },
+    "correlationStatus": {
+      "reconciled": "Réconcilié",
+      "reconciled_with_alert": "Réconcilié (alerte)",
+      "alert": "Alerte",
+      "unpaid": "Impayé",
+      "unreconciled": "Non réconcilié",
+      "orphan_payment": "Paiement orphelin",
+      "uncertain": "Incertain"
+    },
+    "export": {
+      "csv": "CSV",
+      "excel": "Excel",
+      "pdf": "PDF (rapport)",
+      "json": "JSON",
+      "downloading": "Téléchargement…"
+    }
+  },
+  "settings": {
+    "title": "Paramètres",
+    "subtitle": "Gérez vos préférences et votre compte",
+    "language": "Langue",
+    "languageDescription": "Choisissez la langue de l'interface",
+    "profile": "Profil",
+    "security": "Sécurité",
+    "notifications": "Notifications",
+    "plan": "Abonnement",
+    "company": "Entreprise",
+    "firstName": "Prénom",
+    "lastName": "Nom",
+    "email": "Adresse e-mail",
+    "saveProfile": "Enregistrer les modifications",
+    "preferences": "Préférences",
+    "csvSeparator": "Séparateur CSV",
+    "emailNotifications": "Notifications par e-mail",
+    "emailNotificationsHint": "Recevoir un e-mail lorsqu'une analyse est terminée",
+    "danger": "Zone de danger",
+    "deleteAccount": "Supprimer le compte",
+    "deleteAccountDescription": "Cette action est irréversible. Toutes vos données seront supprimées.",
+    "deleteAccountConfirm": "Saisissez votre adresse e-mail pour confirmer",
+    "companyName": "Nom de l'entreprise",
+    "siret": "SIRET",
+    "saveCompany": "Enregistrer l'entreprise",
+    "saved": "Enregistré"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "empty": "Aucune notification",
+    "markAllRead": "Tout marquer comme lu",
+    "types": {
+      "execution_completed": "Analyse terminée",
+      "execution_failed": "Analyse en erreur",
+      "token_expired": "Token expiré",
+      "anomaly_detected": "Anomalie détectée"
+    }
+  },
+  "chat": {
+    "title": "Assistant IA",
+    "newConversation": "Nouvelle conversation",
+    "close": "Fermer",
+    "placeholder": "Posez une question…",
+    "send": "Envoyer",
+    "thinking": "Analyse en cours…",
+    "suggestions": {
+      "title": "Comment puis-je vous aider ?",
+      "items": [
+        "Quelles factures sont impayées ?",
+        "Combien de paiements orphelins ?",
+        "Quel est le taux de réconciliation ?",
+        "Montre les anomalies de la dernière analyse"
+      ]
+    }
+  },
+  "plans": {
+    "title": "Plans & Facturation",
+    "subtitle": "Gérez votre abonnement et votre utilisation",
+    "current": "Plan actuel",
+    "upgrade": "Passer au plan supérieur",
+    "downgrade": "Rétrograder",
+    "changeSuccess": "Plan mis à jour avec succès",
+    "free": {
+      "name": "Gratuit"
+    },
+    "plan1": {
+      "name": "Plan 1"
+    },
+    "plan2": {
+      "name": "Plan 2"
+    }
+  },
+  "usage": {
+    "title": "Utilisation",
+    "executions": "Analyses",
+    "connections": "Connexions",
+    "members": "Membres",
+    "seeAllPlans": "Voir les plans"
+  },
+  "quota": {
+    "exceeded": "Quota dépassé",
+    "detail": "Limite {resource} atteinte ({current}/{max})",
+    "upgradeLink": "Upgrader votre plan"
+  },
+  "company": {
+    "switcher": "Changer d'entreprise",
+    "create": "Nouvelle entreprise",
+    "manage": "Gérer l'entreprise",
+    "noCompanies": "Aucune entreprise",
+    "active": "Active",
+    "members": "Membres",
+    "invite": "Inviter un membre",
+    "inviteEmail": "Adresse e-mail",
+    "deleteCompany": "Supprimer l'entreprise",
+    "deleteCompanyDescription": "Cette action est irréversible. L'entreprise et toutes ses données seront définitivement supprimées.",
+    "deleteCompanyConfirm": "Saisissez le nom de l'entreprise pour confirmer",
+    "roles": {
+      "owner": "Propriétaire",
+      "admin": "Administrateur",
+      "member": "Membre"
+    }
+  },
+  "header": {
+    "language": "Langue",
+    "myAccount": "Mon compte",
+    "profile": "Profil",
+    "settings": "Paramètres",
+    "logout": "Déconnexion",
+    "loggingOut": "Déconnexion..."
+  },
+  "sidebar": {
+    "collapse": "Réduire",
+    "expand": "Développer"
+  },
+  "errors": {
+    "401": "Session expirée. Veuillez vous reconnecter.",
+    "429": "Trop de requêtes. Veuillez patienter.",
+    "500": "Erreur serveur. Veuillez réessayer.",
+    "network": "Erreur réseau. Vérifiez votre connexion.",
+    "unknown": "Une erreur inattendue est survenue."
+  }
+}

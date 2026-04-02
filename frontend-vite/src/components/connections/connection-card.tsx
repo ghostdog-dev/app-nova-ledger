@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MoreVertical, Plug2, RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react';
+import { MoreVertical, Plug2, RefreshCw, CheckCircle, AlertTriangle, FileText, Trash2, ExternalLink } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { getServiceById } from '@/lib/services-catalog';
 import type { ServiceConnection } from '@/types';
 import type { BadgeVariant } from '@/types';
 import styles from './connection-card.module.css';
+import { Link } from 'react-router-dom';
 
 interface ConnectionCardProps {
   connection: ServiceConnection;
@@ -80,10 +81,13 @@ export function ConnectionCard({
     }
   };
 
-  const typeBadgeVariant: Record<ServiceConnection['serviceType'], BadgeVariant> = {
+  const isFileImport = connection.authType === 'file_upload';
+
+  const typeBadgeVariant: Record<string, BadgeVariant> = {
     invoicing: 'info',
     payment: 'default',
     email: 'default',
+    banking: 'success',
   };
 
   return (
@@ -159,36 +163,63 @@ export function ConnectionCard({
             <>
               <div className={styles.overlay} onClick={() => setMenuOpen(false)} aria-hidden="true" />
               <div className={styles.menu} role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleSync}
-                  disabled={isSyncing}
-                  className={styles.menuItem}
-                >
-                  <RefreshCw className={styles.menuItemIcon} style={isSyncing ? { animation: 'spin 1s linear infinite' } : undefined} />
-                  {isSyncing ? 'Sync...' : 'Sync'}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleTest}
-                  disabled={isTesting}
-                  className={styles.menuItem}
-                >
-                  <Plug2 className={styles.menuItemIcon} />
-                  {t('connections.testConnection')}
-                </button>
-                <div className={styles.menuDivider} />
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={handleDisconnect}
-                  disabled={isDisconnecting}
-                  className={clsx(styles.menuItem, styles.menuItemDanger)}
-                >
-                  {t('connections.disconnect')}
-                </button>
+                {isFileImport ? (
+                  <>
+                    <Link
+                      to="/transactions?source=bank_import"
+                      className={styles.menuItem}
+                      role="menuitem"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      <ExternalLink className={styles.menuItemIcon} />
+                      Voir les transactions
+                    </Link>
+                    <div className={styles.menuDivider} />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleDisconnect}
+                      disabled={isDisconnecting}
+                      className={clsx(styles.menuItem, styles.menuItemDanger)}
+                    >
+                      <Trash2 className={styles.menuItemIcon} />
+                      Supprimer l'import
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleSync}
+                      disabled={isSyncing}
+                      className={styles.menuItem}
+                    >
+                      <RefreshCw className={styles.menuItemIcon} style={isSyncing ? { animation: 'spin 1s linear infinite' } : undefined} />
+                      {isSyncing ? 'Sync...' : 'Sync'}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleTest}
+                      disabled={isTesting}
+                      className={styles.menuItem}
+                    >
+                      <Plug2 className={styles.menuItemIcon} />
+                      {t('connections.testConnection')}
+                    </button>
+                    <div className={styles.menuDivider} />
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={handleDisconnect}
+                      disabled={isDisconnecting}
+                      className={clsx(styles.menuItem, styles.menuItemDanger)}
+                    >
+                      {t('connections.disconnect')}
+                    </button>
+                  </>
+                )}
               </div>
             </>
           )}

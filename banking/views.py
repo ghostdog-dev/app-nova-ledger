@@ -206,7 +206,7 @@ class BankCorrelateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from .services.correlation import correlate_providers, correlate_transactions
+        from ai_agent.services.correlation import correlate_providers, correlate_transactions
         bank_stats = correlate_transactions(request.user)
         provider_stats = correlate_providers(request.user)
         return Response({**bank_stats, **provider_stats})

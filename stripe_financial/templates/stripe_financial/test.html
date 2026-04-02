@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stripe Financial Connections — Test</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        body { font-family: -apple-system, system-ui, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+        h1 { font-size: 1.5em; }
+        h2 { font-size: 1.2em; margin-top: 2em; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.3em; }
+        button { background: #635bff; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 4px; font-size: 0.9em; }
+        button:hover { background: #4f46e5; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button.danger { background: #ef4444; }
+        button.secondary { background: #6b7280; }
+        .status { padding: 12px; margin: 10px 0; border-radius: 6px; font-size: 0.9em; }
+        .status.info { background: #eff6ff; border: 1px solid #bfdbfe; }
+        .status.success { background: #f0fdf4; border: 1px solid #bbf7d0; }
+        .status.error { background: #fef2f2; border: 1px solid #fecaca; }
+        .account-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin: 10px 0; }
+        .account-card h3 { margin: 0 0 8px 0; font-size: 1.1em; }
+        .account-card .meta { color: #6b7280; font-size: 0.85em; }
+        .account-card .balance { font-size: 1.2em; font-weight: 600; color: #059669; margin: 8px 0; }
+        table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.85em; }
+        th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; }
+        th { background: #f9fafb; font-weight: 600; }
+        .amount-negative { color: #dc2626; }
+        .amount-positive { color: #059669; }
+        pre { background: #f3f4f6; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.8em; max-height: 300px; }
+        #log { max-height: 200px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>Stripe Financial Connections — Test Page</h1>
+
+    <div class="status info" id="status">Prêt. Connectez un compte bancaire pour commencer.</div>
+
+    <h2>1. Connecter un compte bancaire</h2>
+    <button onclick="connectBank()">Connecter un compte</button>
+
+    <h2>2. Comptes liés</h2>
+    <div id="accounts-container">
+        {% if accounts %}
+        {% for a in accounts %}
+        <div class="account-card" id="card-{{ a.stripe_account_id }}">
+            <h3>{{ a.institution_name }} — {{ a.display_name }} (*{{ a.last4 }})</h3>
+            <div class="meta">
+                ID: {{ a.stripe_account_id }} | Catégorie: {{ a.category }}/{{ a.subcategory }} | Status: {{ a.status }}
+                | Permissions: {{ a.permissions|join:", " }}
+            </div>
+            {% if a.balance_current %}
+            <div class="balance">Solde: {{ a.balance_current }}</div>
+            {% endif %}
+            {% if a.ownership_data %}
+            <div class="meta">Titulaire(s): {% for o in a.ownership_data %}{{ o.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+            {% endif %}
+            <div style="margin-top: 10px;">
+                <button onclick="refreshAccount('{{ a.stripe_account_id }}')">Rafraîchir données</button>
+                <button onclick="loadTransactions('{{ a.stripe_account_id }}')">Voir transactions</button>
+                <button onclick="subscribeAccount('{{ a.stripe_account_id }}')" class="secondary">Auto-refresh quotidien</button>
+                <button onclick="disconnectAccount('{{ a.stripe_account_id }}')" class="danger">Déconnecter</button>
+            </div>
+            <div id="txs-{{ a.stripe_account_id }}"></div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p style="color: #6b7280;">Aucun compte lié. Cliquez "Connecter un compte" ci-dessus.</p>
+        {% endif %}
+    </div>
+
+    <h2>3. Sync global</h2>
+    <button onclick="syncAll()">Sync tout (transactions + soldes + titulaires)</button>
+
+    <h2>Log</h2>
+    <pre id="log"></pre>
+
+    <script>
+        const csrfToken = '{{ csrf_token }}';
+        let stripe = null;
+
+        function log(msg) {
+            const el = document.getElementById('log');
+            const ts = new Date().toLocaleTimeString();
+            el.textContent = `[${ts}] ${msg}\n` + el.textContent;
+        }
+
+        function setStatus(msg, type) {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = 'status ' + type;
+        }
+
+        async function api(url, method, body) {
+            method = method || 'POST';
+            const opts = {
+                method,
+                headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/json'},
+            };
+            if (body) opts.body = JSON.stringify(body);
+            const resp = await fetch(url, opts);
+            const data = await resp.json();
+            if (data.error) throw new Error(data.error);
+            return data;
+        }
+
+        async function connectBank() {
+            try {
+                setStatus('Création de la session...', 'info');
+                log('Creating Financial Connections session...');
+
+                const session = await api('/financial/session/');
+                log('Session created: ' + session.session_id);
+
+                if (!stripe) {
+                    stripe = Stripe(session.publishable_key);
+                }
+
+                setStatus('Ouverture du modal Stripe...', 'info');
+                const result = await stripe.collectFinancialConnectionsAccounts({
+                    clientSecret: session.client_secret,
+                });
+
+                if (result.error) {
+                    throw new Error(result.error.message);
+                }
+
+                const accounts = (result.financialConnectionsSession && result.financialConnectionsSession.accounts) || [];
+                log('User linked ' + accounts.length + ' account(s)');
+
+                if (accounts.length === 0) {
+                    setStatus('Aucun compte sélectionné.', 'info');
+                    return;
+                }
+
+                setStatus('Enregistrement des comptes...', 'info');
+                const linkResult = await api('/financial/link/', 'POST', {
+                    session_id: session.session_id,
+                });
+                log('Accounts linked: ' + JSON.stringify(linkResult));
+
+                setStatus('Synchronisation des données...', 'info');
+                const syncResult = await api('/financial/sync/');
+                log('Sync result: ' + JSON.stringify(syncResult));
+
+                setStatus(
+                    linkResult.accounts_linked + ' compte(s) lié(s), ' +
+                    (syncResult.transactions_created || 0) + ' transactions récupérées.',
+                    'success'
+                );
+                setTimeout(function() { location.reload(); }, 1000);
+
+            } catch (e) {
+                setStatus('Erreur: ' + e.message, 'error');
+                log('ERROR: ' + e.message);
+            }
+        }
+
+        async function syncAll() {
+            try {
+                setStatus('Sync en cours...', 'info');
+                log('Starting full sync...');
+                const result = await api('/financial/sync/');
+                log('Sync result: ' + JSON.stringify(result, null, 2));
+                setStatus(
+                    'Sync terminé: ' + (result.transactions_created || 0) + ' nouvelles transactions, ' +
+                    (result.transactions_updated || 0) + ' mises à jour.',
+                    'success'
+                );
+                setTimeout(function() { location.reload(); }, 1500);
+            } catch (e) {
+                setStatus('Erreur sync: ' + e.message, 'error');
+                log('ERROR: ' + e.message);
+            }
+        }
+
+        async function refreshAccount(accountId) {
+            try {
+                setStatus('Rafraîchissement ' + accountId + '...', 'info');
+                log('Refreshing account ' + accountId + '...');
+                const result = await api('/financial/accounts/' + accountId + '/refresh/');
+                log('Refresh result: ' + JSON.stringify(result, null, 2));
+                setStatus('Données rafraîchies.', 'success');
+                setTimeout(function() { location.reload(); }, 1500);
+            } catch (e) {
+                setStatus('Erreur refresh: ' + e.message, 'error');
+                log('ERROR: ' + e.message);
+            }
+        }
+
+        async function loadTransactions(accountId) {
+            try {
+                log('Loading transactions for ' + accountId + '...');
+                const result = await api('/financial/accounts/' + accountId + '/transactions/?limit=50', 'GET');
+                log('Got ' + result.transactions.length + ' / ' + result.total + ' transactions');
+
+                const container = document.getElementById('txs-' + accountId);
+
+                // Clear previous content safely
+                while (container.firstChild) container.removeChild(container.firstChild);
+
+                if (!result.transactions.length) {
+                    const p = document.createElement('p');
+                    p.style.color = '#6b7280';
+                    p.textContent = 'Aucune transaction.';
+                    container.appendChild(p);
+                    return;
+                }
+
+                // Build table with safe DOM methods
+                const h4 = document.createElement('h4');
+                h4.textContent = result.total + ' transactions';
+                container.appendChild(h4);
+
+                const table = document.createElement('table');
+                const thead = table.createTHead();
+                const headerRow = thead.insertRow();
+                ['Date', 'Description', 'Montant', 'Status'].forEach(function(text) {
+                    const th = document.createElement('th');
+                    th.textContent = text;
+                    headerRow.appendChild(th);
+                });
+
+                const tbody = table.createTBody();
+                result.transactions.forEach(function(tx) {
+                    const row = tbody.insertRow();
+                    const dateCell = row.insertCell();
+                    dateCell.textContent = tx.transacted_at ? new Date(tx.transacted_at).toLocaleDateString('fr-FR') : '-';
+
+                    const descCell = row.insertCell();
+                    descCell.textContent = tx.description || '(vide)';
+
+                    const amtCell = row.insertCell();
+                    amtCell.textContent = tx.amount_decimal.toFixed(2) + ' ' + tx.currency.toUpperCase();
+                    amtCell.className = tx.amount < 0 ? 'amount-negative' : 'amount-positive';
+
+                    const statusCell = row.insertCell();
+                    statusCell.textContent = tx.status;
+                });
+                container.appendChild(table);
+
+                // Show raw data of first transaction
+                if (result.transactions[0] && result.transactions[0].raw_data) {
+                    const details = document.createElement('details');
+                    const summary = document.createElement('summary');
+                    summary.textContent = 'Raw data (1ère transaction)';
+                    details.appendChild(summary);
+                    const pre = document.createElement('pre');
+                    pre.textContent = JSON.stringify(result.transactions[0].raw_data, null, 2);
+                    details.appendChild(pre);
+                    container.appendChild(details);
+                }
+            } catch (e) {
+                log('ERROR loading transactions: ' + e.message);
+            }
+        }
+
+        async function subscribeAccount(accountId) {
+            try {
+                log('Subscribing ' + accountId + ' to daily refreshes...');
+                const result = await api('/financial/accounts/' + accountId + '/subscribe/');
+                log('Subscribe result: ' + JSON.stringify(result));
+                setStatus('Auto-refresh quotidien activé.', 'success');
+            } catch (e) {
+                setStatus('Erreur subscribe: ' + e.message, 'error');
+                log('ERROR: ' + e.message);
+            }
+        }
+
+        async function disconnectAccount(accountId) {
+            if (!confirm('Déconnecter ce compte ? Les données seront conservées.')) return;
+            try {
+                log('Disconnecting ' + accountId + '...');
+                await api('/financial/accounts/' + accountId + '/disconnect/');
+                setStatus('Compte déconnecté.', 'success');
+                document.getElementById('card-' + accountId).style.opacity = '0.5';
+            } catch (e) {
+                setStatus('Erreur disconnect: ' + e.message, 'error');
+                log('ERROR: ' + e.message);
+            }
+        }
+    </script>
+</body>
+</html>

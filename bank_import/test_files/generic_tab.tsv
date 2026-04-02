@@ -1,0 +1,11 @@
+Transaction Date	Description	Amount	Balance
+2026-03-15	Stripe payout EUR	1234.56	15678.90
+2026-03-14	OVH SAS hosting fee	-45.99	14444.34
+2026-03-13	Amazon EU purchase	-127.85	14490.33
+2026-03-12	PayPal transfer received	567.89	14618.18
+2026-03-11	Scaleway cloud server	-29.00	14050.29
+2026-03-10	Mollie settlement payout	2456.78	16507.07
+2026-03-09	SNCF train ticket	-78.00	14159.78
+2026-03-08	EDF electricity bill	-156.30	11702.00
+2026-03-07	Client payment Dupont	3200.00	14902.00
+2026-03-06	Google Ads campaign	-234.50	11425.72

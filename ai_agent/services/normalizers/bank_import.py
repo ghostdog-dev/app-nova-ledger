@@ -17,7 +17,7 @@ class BankImportNormalizer(BaseNormalizer):
         return self._build(
             user=user,
             source_type='bank_import',
-            source_id=f'import_{import_id}_{row.date}_{row.label[:50]}_{row.amount}',
+            source_id=f'bank_{row.date}_{row.label[:40]}_{row.amount}',
             direction=direction,
             category='other',
             amount=amount,

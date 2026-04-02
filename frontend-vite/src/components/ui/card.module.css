@@ -1,0 +1,77 @@
+.card {
+  border: 1px solid var(--color-border);
+  background-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transition: background-color 0.3s ease;
+}
+
+.card:hover {
+  background-color: var(--color-bg);
+}
+
+/* Padding variants — mobile-first (compact), tablet+ (normal) */
+.paddingSm {
+  padding: 0.75rem;
+}
+
+.paddingMd {
+  padding: 0.75rem;
+}
+
+.paddingLg {
+  padding: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .paddingSm {
+    padding: 1rem;
+  }
+
+  .paddingMd {
+    padding: 1.5rem;
+  }
+
+  .paddingLg {
+    padding: 2rem;
+  }
+}
+
+/* Card Header */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* Card Title */
+.title {
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.1;
+}
+
+/* Card Description */
+.description {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+/* Card Content */
+.content {
+  margin-top: 1rem;
+}
+
+/* Card Footer */
+.footer {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-top: 1px solid var(--color-border-light);
+  padding-top: 1rem;
+}

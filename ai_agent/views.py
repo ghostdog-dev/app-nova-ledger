@@ -55,10 +55,39 @@ def classify_batch_status_view(request, run_id):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class UnifiedPipelineView(APIView):
-    """POST /api/ai/unified-pipeline/ — run the new unified pipeline."""
+    """POST /api/ai/unified-pipeline/ — launch pipeline in background, return immediately."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        from ai_agent.services.orchestrator import run_unified_pipeline
-        result = run_unified_pipeline(request.user)
-        return Response(result)
+        import threading
+        from ai_agent.models import PipelineRun
+
+        pipeline_run = PipelineRun.objects.create(user=request.user, status='pending')
+
+        def _run_bg(user_id, run_id):
+            import django
+            django.db.connections.close_all()
+            from django.contrib.auth import get_user_model
+            from ai_agent.services.orchestrator import PipelineOrchestrator
+            User = get_user_model()
+            user = User.objects.get(id=user_id)
+            run = PipelineRun.objects.get(id=run_id)
+            try:
+                PipelineOrchestrator().run(user, run)
+            except Exception as e:
+                run.status = 'failed'
+                run.error_message = str(e)[:500]
+                from django.utils import timezone
+                run.completed_at = timezone.now()
+                run.save()
+
+        threading.Thread(
+            target=_run_bg,
+            args=(request.user.id, pipeline_run.id),
+            daemon=True,
+        ).start()
+
+        return Response({
+            'status': 'started',
+            'pipelineRunId': pipeline_run.id,
+        })

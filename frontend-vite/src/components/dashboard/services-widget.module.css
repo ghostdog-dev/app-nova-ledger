@@ -1,0 +1,185 @@
+/* ============================================================
+   Services Widget — Nova Editorial Design (Mobile-First)
+   ============================================================ */
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.count {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+@media (min-width: 640px) {
+  .count {
+    font-size: 1.75rem;
+  }
+}
+
+/* --- Empty State --- */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 0;
+  text-align: center;
+}
+
+@media (min-width: 640px) {
+  .emptyState {
+    gap: 1rem;
+    padding: 2rem 0;
+  }
+}
+
+.emptyText {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--color-text-light);
+}
+
+@media (min-width: 640px) {
+  .emptyText {
+    font-size: 0.875rem;
+  }
+}
+
+/* --- Service List --- */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.serviceRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background-color 0.3s ease;
+}
+
+@media (min-width: 640px) {
+  .serviceRow {
+    gap: 0.75rem;
+    padding: 0.625rem 0;
+  }
+}
+
+.serviceRow:last-of-type {
+  border-bottom: none;
+}
+
+.serviceRow:hover {
+  background-color: var(--color-bg-alt);
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.serviceName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+@media (min-width: 640px) {
+  .serviceName {
+    font-size: 0.875rem;
+  }
+}
+
+.moreText {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-light);
+  padding: 0.375rem 0;
+}
+
+@media (min-width: 640px) {
+  .moreText {
+    font-size: 0.75rem;
+    padding: 0.5rem 0;
+  }
+}
+
+/* --- Footer --- */
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding-top: 0.625rem;
+  margin-top: 0.375rem;
+  border-top: 1px solid var(--color-border-light);
+}
+
+@media (min-width: 640px) {
+  .footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 0.75rem;
+    margin-top: 0.5rem;
+  }
+}
+
+.footerLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color 0.3s ease;
+  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  min-height: 2.75rem;
+}
+
+@media (min-width: 640px) {
+  .footerLink {
+    min-height: 0;
+  }
+}
+
+@media (min-width: 640px) {
+  .footerLink {
+    font-size: 0.75rem;
+  }
+}
+
+.footerLink:hover {
+  color: var(--color-text);
+}
+
+/* --- Icon Sizes --- */
+.iconSm {
+  width: 1rem;
+  height: 1rem;
+}
+
+.iconXs {
+  width: 0.875rem;
+  height: 0.875rem;
+}

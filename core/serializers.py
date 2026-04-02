@@ -139,6 +139,11 @@ from ai_agent.models import UnifiedTransaction, TransactionCluster
 
 class UnifiedTransactionSerializer(serializers.ModelSerializer):
     reconciliation_status = serializers.SerializerMethodField()
+    accounting_score = serializers.SerializerMethodField()
+    accounting_status = serializers.SerializerMethodField()
+    missing_fields = serializers.SerializerMethodField()
+    cluster_label = serializers.SerializerMethodField()
+    cluster_sources_count = serializers.SerializerMethodField()
 
     class Meta:
         model = UnifiedTransaction
@@ -150,7 +155,10 @@ class UnifiedTransactionSerializer(serializers.ModelSerializer):
             'description', 'reference', 'payment_method', 'items',
             'confidence', 'completeness',
             'pcg_code', 'pcg_label', 'business_personal', 'tva_deductible',
-            'cluster', 'created_at',
+            'cluster', 'reconciliation_status',
+            'accounting_score', 'accounting_status', 'missing_fields',
+            'cluster_label', 'cluster_sources_count',
+            'created_at',
         ]
 
     def get_reconciliation_status(self, obj):
@@ -159,6 +167,50 @@ class UnifiedTransactionSerializer(serializers.ModelSerializer):
         if obj.cluster and obj.cluster.is_complete:
             return 'matched'
         return 'pending'
+
+    def get_accounting_score(self, obj):
+        """Score based on accounting fields only (not multi-source)."""
+        fields = [f for f in self._get_data_fields(obj) if f['key'] != 'multi_source']
+        present = sum(1 for f in fields if f['present'])
+        return round(present * 100 / len(fields)) if fields else 0
+
+    def get_accounting_status(self, obj):
+        score = self.get_accounting_score(obj)
+        if score >= 80:
+            return 'rapproche'
+        if score >= 40:
+            return 'en_cours'
+        return 'non_rapproche'
+
+    def get_missing_fields(self, obj):
+        """Returns all data fields including multi-source (shown as info, not scored)."""
+        return self._get_data_fields(obj)
+
+    def _get_data_fields(self, obj):
+        has_multi_source = False
+        if obj.cluster_id:
+            sources = set(obj.cluster.transactions.values_list('source_type', flat=True))
+            has_multi_source = len(sources) >= 2
+
+        return [
+            {'name': 'Montant', 'key': 'montant', 'present': obj.amount is not None and obj.amount != 0},
+            {'name': 'Date', 'key': 'date', 'present': obj.transaction_date is not None},
+            {'name': 'Fournisseur', 'key': 'fournisseur', 'present': bool(obj.vendor_name and obj.vendor_name.strip())},
+            {'name': 'Catégorie', 'key': 'categorie', 'present': bool(obj.pcg_code)},
+            {'name': 'Multi-source', 'key': 'multi_source', 'present': has_multi_source},  # info only, not in score
+            {'name': 'Montant HT', 'key': 'montant_ht', 'present': obj.amount_tax_excl is not None},
+            {'name': 'TVA', 'key': 'tva', 'present': obj.tax_amount is not None or obj.tax_rate is not None},
+        ]
+
+    def get_cluster_label(self, obj):
+        if obj.cluster:
+            return obj.cluster.label
+        return None
+
+    def get_cluster_sources_count(self, obj):
+        if obj.cluster:
+            return obj.cluster.transactions.values('source_type').distinct().count()
+        return 0
 
 
 class TransactionClusterSerializer(serializers.ModelSerializer):

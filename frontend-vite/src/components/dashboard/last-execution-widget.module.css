@@ -1,0 +1,305 @@
+/* ============================================================
+   Last Execution Widget — Nova Editorial Design (Mobile-First)
+   ============================================================ */
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+@media (min-width: 640px) {
+  .headerRow {
+    flex-wrap: nowrap;
+  }
+}
+
+/* --- Empty State --- */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.25rem 0;
+  text-align: center;
+}
+
+@media (min-width: 640px) {
+  .emptyState {
+    gap: 0.75rem;
+    padding: 2rem 0;
+  }
+}
+
+.emptyIcon {
+  width: 2rem;
+  height: 2rem;
+  color: var(--color-text-light);
+}
+
+@media (min-width: 640px) {
+  .emptyIcon {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+}
+
+.emptyTitle {
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+@media (min-width: 640px) {
+  .emptyTitle {
+    font-size: 1.25rem;
+  }
+}
+
+.emptyDesc {
+  margin-top: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-light);
+}
+
+@media (min-width: 640px) {
+  .emptyDesc {
+    font-size: 0.75rem;
+  }
+}
+
+/* --- Content --- */
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .content {
+    gap: 1rem;
+  }
+}
+
+/* --- Status Row --- */
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.statusDate {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-light);
+}
+
+@media (min-width: 640px) {
+  .statusDate {
+    font-size: 0.75rem;
+  }
+}
+
+/* --- Progress Bar --- */
+.progressWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.progressLabel {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@media (min-width: 640px) {
+  .progressLabel {
+    font-size: 0.75rem;
+  }
+}
+
+.progressBar {
+  height: 0.375rem;
+  overflow: hidden;
+  background-color: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+}
+
+.progressFill {
+  height: 100%;
+  background-color: var(--color-success);
+  animation: progress 2s ease-in-out infinite;
+}
+
+@keyframes progress {
+  0% { width: 0%; }
+  50% { width: 70%; }
+  100% { width: 100%; }
+}
+
+/* --- Summary Grid --- */
+.summaryGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  border-top: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
+}
+
+@media (min-width: 640px) {
+  .summaryGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.summaryBox {
+  padding: 0.75rem;
+  text-align: center;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  transition: background-color 0.3s ease;
+}
+
+@media (min-width: 640px) {
+  .summaryBox {
+    padding: 1rem;
+  }
+}
+
+.summaryBox:hover {
+  background-color: var(--color-bg-alt);
+}
+
+.summaryValue {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@media (min-width: 640px) {
+  .summaryValue {
+    font-size: 1.75rem;
+  }
+}
+
+.summaryValueDefault {
+  color: var(--color-text);
+}
+
+.summaryValueGreen {
+  color: var(--color-success);
+}
+
+.summaryValueAmber {
+  color: var(--color-warning);
+}
+
+.summaryLabel {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: 0.25rem;
+}
+
+@media (min-width: 640px) {
+  .summaryLabel {
+    font-size: 0.625rem;
+    margin-top: 0.375rem;
+  }
+}
+
+/* --- Period --- */
+.period {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-light);
+}
+
+@media (min-width: 640px) {
+  .period {
+    font-size: 0.75rem;
+  }
+}
+
+/* --- View Link --- */
+.viewLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color 0.3s ease;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  min-height: 2.75rem;
+}
+
+@media (min-width: 640px) {
+  .viewLink {
+    min-height: 0;
+  }
+}
+
+@media (min-width: 640px) {
+  .viewLink {
+    font-size: 0.75rem;
+  }
+}
+
+.viewLink:hover {
+  color: var(--color-text);
+  border-bottom-color: var(--color-text);
+}
+
+/* --- Icon Sizes --- */
+.iconSm {
+  width: 1rem;
+  height: 1rem;
+}
+
+.iconXs {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* --- Status Icon Colors --- */
+.statusIconGreen {
+  color: var(--color-success);
+}
+
+.statusIconRed {
+  color: var(--color-error);
+}
+
+.statusIconBlue {
+  color: var(--color-success);
+}
+
+.statusIconPulse {
+  color: var(--color-success);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.statusIconMuted {
+  color: var(--color-text-light);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}

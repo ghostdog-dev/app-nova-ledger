@@ -1,0 +1,53 @@
+.section {
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-bg);
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  overflow: hidden;
+  display: flex;
+}
+
+@media (min-width: 640px) {
+  .section {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+  }
+}
+
+.track {
+  display: flex;
+  white-space: nowrap;
+  animation: marquee 30s linear infinite;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee {
+  display: flex;
+  gap: 4rem;
+  align-items: center;
+  padding-right: 4rem;
+}
+
+.client {
+  font-family: var(--font-heading);
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  font-style: italic;
+  color: var(--color-text-light);
+  user-select: none;
+}
+
+@media (min-width: 640px) {
+  .client {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
+  }
+}

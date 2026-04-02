@@ -1,0 +1,36 @@
+.spinner {
+  animation: spin 1s linear infinite;
+  color: var(--color-accent);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sm {
+  width: 1rem;
+  height: 1rem;
+}
+
+.md {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.lg {
+  width: 2rem;
+  height: 2rem;
+}
+
+.track {
+  opacity: 0.15;
+}
+
+.arc {
+  opacity: 0.85;
+}

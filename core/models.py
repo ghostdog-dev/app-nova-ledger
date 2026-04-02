@@ -67,6 +67,7 @@ class ServiceConnection(models.Model):
         ('invoicing', 'Invoicing'),
         ('payment', 'Payment'),
         ('email', 'Email'),
+        ('banking', 'Banking'),
     ]
     STATUS_CHOICES = [
         ('active', 'Active'),
@@ -77,6 +78,7 @@ class ServiceConnection(models.Model):
     AUTH_TYPE_CHOICES = [
         ('oauth', 'OAuth'),
         ('api_key', 'API Key'),
+        ('file_upload', 'File Upload'),
     ]
 
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)

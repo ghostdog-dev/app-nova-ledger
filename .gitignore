@@ -5,3 +5,23 @@ db.sqlite3
 venv/
 .venv/
 .playwright-mcp/
+
+# Build artifacts
+frontend/static/
+node_modules/
+dist/
+
+# User uploads (bank statements, etc.)
+bank_imports/
+media/
+
+# Internal reports
+RAPPORT-DETAILLE-CLAUDE-CODE.md
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

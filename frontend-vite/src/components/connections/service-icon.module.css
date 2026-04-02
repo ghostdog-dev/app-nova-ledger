@@ -1,0 +1,28 @@
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: #F5F2EB;
+  border-radius: 0;
+}
+
+.sm {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.75rem;
+}
+
+.md {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 0.875rem;
+}
+
+.lg {
+  width: 3.5rem;
+  height: 3.5rem;
+  font-size: 1.125rem;
+}

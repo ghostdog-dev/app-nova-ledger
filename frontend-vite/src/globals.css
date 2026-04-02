@@ -1,0 +1,530 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
+
+/* ============================================================
+   Nova Editorial Design System — Global Styles
+   ============================================================ */
+
+/* --- Design Tokens --- */
+:root {
+  /* Typography */
+  --font-heading: 'Cormorant Garamond', 'Georgia', serif;
+  --font-body: 'Space Mono', 'Courier New', monospace;
+  --font-mono: 'Space Mono', 'Courier New', monospace;
+
+  /* Palette (reference) */
+  --color-cream: #F5F2EB;
+  --color-dark: #1C1C1C;
+  --color-burgundy: #8B2E2E;
+  --color-beige: #E8E4D9;
+  --color-teal: #2E5C55;
+
+  /* Semantic Colors — Light Theme */
+  --color-bg: #F5F2EB;
+  --color-bg-alt: #E8E4D9;
+  --color-bg-elevated: #FFFFFF;
+  --color-bg-hover: rgba(28, 28, 28, 0.03);
+  --color-bg-active: rgba(28, 28, 28, 0.06);
+  --color-text: #1C1C1C;
+  --color-text-muted: rgba(28, 28, 28, 0.6);
+  --color-text-light: rgba(28, 28, 28, 0.4);
+  --color-text-on-inverted: #F5F2EB;
+  --color-accent: #8B2E2E;
+  --color-border: #1C1C1C;
+  --color-border-light: rgba(28, 28, 28, 0.1);
+  --color-border-subtle: rgba(28, 28, 28, 0.04);
+  --color-success: #2E5C55;
+  --color-success-bg: rgba(46, 92, 85, 0.1);
+  --color-warning: #D4883E;
+  --color-warning-bg: rgba(212, 136, 62, 0.1);
+  --color-error: #8B2E2E;
+  --color-error-bg: rgba(139, 46, 46, 0.08);
+  --color-info: #2E5C55;
+  --color-inverted-bg: #1C1C1C;
+  --color-inverted-text: #F5F2EB;
+
+  /* Spacing Scale */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+  --space-4xl: 6rem;
+  --space-5xl: 8rem;
+
+  /* Zero border-radius */
+  --radius: 0;
+
+  /* Chart Palette — earthy, desaturated tones matching Nova editorial */
+  --chart-green: #3D7A6E;       /* teal-green — reconciled */
+  --chart-amber: #C47A32;       /* warm amber — warnings, anomalies */
+  --chart-red: #9B3A3A;         /* deep burgundy-red — errors, unpaid */
+  --chart-blue: #4A6B8A;        /* slate-blue — correlations, info */
+  --chart-orange: #B8652A;      /* burnt sienna — orphan payments */
+  --chart-muted: #8A857D;       /* warm gray — uncertain, fallback */
+  --chart-grid: rgba(28, 28, 28, 0.06);
+  --chart-axis: rgba(28, 28, 28, 0.35);
+  --chart-cursor: rgba(28, 28, 28, 0.03);
+  --chart-tooltip-bg: #FFFFFF;
+  --chart-tooltip-border: rgba(28, 28, 28, 0.1);
+
+  /* Transitions */
+  --transition: 0.3s ease;
+  --transition-fast: 0.15s ease;
+  --transition-slow: 0.5s ease;
+}
+
+/* --- Dark Theme --- */
+[data-theme="dark"] {
+  --color-cream: #F5F2EB;
+  --color-dark: #1C1C1C;
+  --color-burgundy: #8B2E2E;
+  --color-beige: #2A2A2A;
+  --color-teal: #2E5C55;
+
+  --color-bg: #1C1C1C;
+  --color-bg-alt: #252525;
+  --color-bg-elevated: #2A2A2A;
+  --color-bg-hover: rgba(245, 242, 235, 0.03);
+  --color-bg-active: rgba(245, 242, 235, 0.06);
+  --color-text: #F5F2EB;
+  --color-text-muted: rgba(245, 242, 235, 0.5);
+  --color-text-light: rgba(245, 242, 235, 0.35);
+  --color-text-on-inverted: #1C1C1C;
+  --color-accent: #8B2E2E;
+  --color-border: rgba(245, 242, 235, 0.2);
+  --color-border-light: rgba(245, 242, 235, 0.1);
+  --color-border-subtle: rgba(245, 242, 235, 0.04);
+  --color-success: #2E5C55;
+  --color-success-bg: rgba(46, 92, 85, 0.2);
+  --color-warning: #D4883E;
+  --color-warning-bg: rgba(212, 136, 62, 0.2);
+  --color-error: #8B2E2E;
+  --color-error-bg: rgba(139, 46, 46, 0.2);
+  --color-info: #2E5C55;
+  --color-inverted-bg: #F5F2EB;
+  --color-inverted-text: #1C1C1C;
+
+  /* Chart Palette — dark theme: slightly brighter for legibility */
+  --chart-green: #4A9486;
+  --chart-amber: #D4923E;
+  --chart-red: #B84E4E;
+  --chart-blue: #5E8AB0;
+  --chart-orange: #CC7A3A;
+  --chart-muted: #9B968E;
+  --chart-grid: rgba(245, 242, 235, 0.06);
+  --chart-axis: rgba(245, 242, 235, 0.35);
+  --chart-cursor: rgba(245, 242, 235, 0.03);
+  --chart-tooltip-bg: #2A2A2A;
+  --chart-tooltip-border: rgba(245, 242, 235, 0.1);
+
+  color-scheme: dark;
+}
+
+[data-theme="dark"] ::selection {
+  background-color: var(--color-teal);
+  color: var(--color-cream);
+}
+
+/* --- Reset --- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* --- Base Styles --- */
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+  overflow-x: clip;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: clip;
+}
+
+/* --- Text Selection --- */
+::selection {
+  background-color: var(--color-burgundy);
+  color: var(--color-cream);
+}
+
+::-moz-selection {
+  background-color: var(--color-burgundy);
+  color: var(--color-cream);
+}
+
+/* --- Focus Visible --- */
+:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* --- Responsive Typography (mobile-first, fluid clamp) --- */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  color: var(--color-text);
+  line-height: 1.1;
+  font-weight: 600;
+}
+
+h1 {
+  font-size: clamp(1.75rem, 1.2rem + 2.5vw, 3rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: clamp(1.5rem, 1rem + 2vw, 2.25rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: clamp(1.25rem, 0.9rem + 1.5vw, 1.75rem);
+  font-weight: 600;
+}
+
+h4 {
+  font-size: clamp(1.125rem, 0.95rem + 0.75vw, 1.375rem);
+  font-weight: 500;
+}
+
+h5 {
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+h6 {
+  font-size: 1rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+p {
+  line-height: 1.6;
+}
+
+/* --- Links --- */
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+a:hover {
+  color: var(--color-text);
+}
+
+/* --- Labels --- */
+label {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+/* --- Buttons --- */
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  border-radius: 0;
+  transition: color var(--transition), background-color var(--transition), border-color var(--transition);
+}
+
+/* --- Form Elements --- */
+input,
+textarea,
+select {
+  font: inherit;
+  font-family: var(--font-body);
+  border-radius: 0;
+  transition: border-color var(--transition), background-color var(--transition);
+}
+
+/* --- Lists --- */
+ul, ol {
+  list-style: none;
+}
+
+/* --- Images --- */
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* --- Global Interactive Transitions --- */
+a,
+button,
+input,
+textarea,
+select,
+[role="button"] {
+  transition: color var(--transition), background-color var(--transition), border-color var(--transition), opacity var(--transition);
+}
+
+/* --- Scrollbar --- */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-text-light) var(--color-bg);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-text-light);
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* --- Utility: Visually Hidden (Accessibility) --- */
+.visually-hidden,
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ============================================================
+   Keyframe Animations — Nova Editorial
+   ============================================================ */
+
+/* Fade In */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Slide Up */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(1.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Slide Down */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-1.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Slide In from Left */
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-1.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Slide In from Right */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Spin */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Pulse */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Editorial Reveal — a subtle scale + fade for editorial sections */
+@keyframes editorialReveal {
+  from {
+    opacity: 0;
+    transform: translateY(2rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Underline Expand — for editorial link/heading underlines */
+@keyframes underlineExpand {
+  from {
+    transform: scaleX(0);
+    transform-origin: left center;
+  }
+  to {
+    transform: scaleX(1);
+    transform-origin: left center;
+  }
+}
+
+/* Fade-in from Nova animations.css variants */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Slide variants from Nova animations.css */
+@keyframes slide-in-from-top {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slide-in-from-bottom {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slide-in-from-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-in-from-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+/* Small-distance slide animations for popovers/menus */
+@keyframes slide-in-from-top-2 {
+  from { transform: translateY(-0.5rem); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slide-in-from-bottom-2 {
+  from { transform: translateY(0.5rem); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slide-in-from-left-2 {
+  from { transform: translateX(-0.5rem); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-in-from-right-2 {
+  from { transform: translateX(0.5rem); }
+  to { transform: translateX(0); }
+}
+
+/* Zoom variants */
+@keyframes zoom-in-95 {
+  from { transform: scale(0.95); }
+  to { transform: scale(1); }
+}
+
+@keyframes zoom-out-95 {
+  from { transform: scale(1); }
+  to { transform: scale(0.95); }
+}
+
+/* Accordion animations */
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
+
+/* Caret blink for input fields */
+@keyframes caret-blink {
+  0%, 70%, 100% { opacity: 1; }
+  20%, 50% { opacity: 0; }
+}
+
+/* ============================================================
+   Enforce Zero Border-Radius & No Box-Shadow Globally
+   ============================================================ */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}

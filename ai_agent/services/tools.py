@@ -149,14 +149,15 @@ FLAG_CONTRADICTION_TOOL = {
 CLASSIFY_EXPENSE_TOOL = {
     "name": "classify_expense",
     "description": (
-        "Classify a transaction with PCG code, business/personal, TVA deductibility. "
-        "Use for bank transactions and email expenses."
+        "Classify a transaction AND calculate TVA when possible. "
+        "Set PCG code, category, business/personal, TVA fields. "
+        "If you can determine the TVA rate, ALWAYS include tax_rate, tax_amount, amount_tax_excl."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "transaction_id": {"type": "integer"},
-            "pcg_code": {"type": "string", "description": "PCG code (606, 613, 615, 625, 626, 627, 628, 791...)."},
+            "pcg_code": {"type": "string", "description": "PCG code (606, 613, 615, 625, 626, 627, 628, 706, 707, 791...)."},
             "pcg_label": {"type": "string", "description": "Human-readable label."},
             "category": {
                 "type": "string",
@@ -165,6 +166,9 @@ CLASSIFY_EXPENSE_TOOL = {
             },
             "business_personal": {"type": "string", "enum": ["business", "personal", "unknown"]},
             "tva_deductible": {"type": "boolean"},
+            "tax_rate": {"type": "number", "description": "TVA rate (20.0, 10.0, 5.5, 2.1, 0). Null if unknown."},
+            "tax_amount": {"type": "number", "description": "TVA amount calculated. Null if unknown."},
+            "amount_tax_excl": {"type": "number", "description": "Amount excluding TVA. Null if unknown."},
             "confidence": {"type": "number", "description": "0.0-1.0"},
             "reasoning": {"type": "string"},
         },
@@ -320,13 +324,33 @@ def make_tool_handlers(user):
         tx.business_personal = params.get('business_personal', tx.business_personal)
         tx.tva_deductible = params.get('tva_deductible', tx.tva_deductible)
         tx.confidence = max(tx.confidence, params.get('confidence', 0))
+
+        # TVA fields — set only if provided and not None
+        if params.get('tax_rate') is not None:
+            try:
+                tx.tax_rate = Decimal(str(params['tax_rate']))
+            except (InvalidOperation, ValueError):
+                pass
+        if params.get('tax_amount') is not None:
+            try:
+                tx.tax_amount = Decimal(str(params['tax_amount']))
+            except (InvalidOperation, ValueError):
+                pass
+        if params.get('amount_tax_excl') is not None:
+            try:
+                tx.amount_tax_excl = Decimal(str(params['amount_tax_excl']))
+            except (InvalidOperation, ValueError):
+                pass
+
         tx.save()
 
         return {
             "transaction_id": tx.id,
             "pcg_code": tx.pcg_code,
             "category": tx.category,
-            "business_personal": tx.business_personal,
+            "tax_rate": str(tx.tax_rate) if tx.tax_rate else None,
+            "tax_amount": str(tx.tax_amount) if tx.tax_amount else None,
+            "amount_tax_excl": str(tx.amount_tax_excl) if tx.amount_tax_excl else None,
         }
 
     def handle_flag_contradiction(params):

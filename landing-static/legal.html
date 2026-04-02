@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nova Ledger — Mentions Legales & Politique de Confidentialite</title>
+  <meta name="description" content="Mentions legales et politique de confidentialite de Nova Ledger.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' fill='%231C1C1C'/><circle cx='12' cy='12' r='4' fill='%23F5F2EB'/></svg>">
+</head>
+<body>
+
+  <!-- Texture Overlay -->
+  <svg class="texture-overlay" width="100%" height="100%">
+    <filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/></filter>
+    <rect width="100%" height="100%" filter="url(#noise)"/>
+  </svg>
+
+  <!-- Navbar -->
+  <nav class="nav" id="navbar">
+    <div class="nav-inner">
+      <a href="/" class="logo-wrap">
+        <div class="logo-icon"><div class="logo-icon-dot"></div></div>
+        <span class="logo-text">Nova Ledger</span>
+      </a>
+      <div class="nav-links">
+        <a href="/" class="nav-link">Home</a>
+        <a href="#legal" class="nav-link">Mentions Legales</a>
+        <a href="#privacy" class="nav-link">Privacy</a>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">&#9790;</button>
+      </div>
+      <button class="mobile-toggle" id="mobileToggle" aria-label="Menu">&#9776;</button>
+    </div>
+    <div class="mobile-menu" id="mobileMenu">
+      <a href="/" class="mobile-link" onclick="closeMobile()">Home</a>
+      <a href="#legal" class="mobile-link" onclick="closeMobile()">Mentions Legales</a>
+      <a href="#privacy" class="mobile-link" onclick="closeMobile()">Privacy</a>
+    </div>
+  </nav>
+
+  <!-- Legal Content -->
+  <main class="legal-page">
+    <div class="container">
+      <div class="legal-content" id="legal">
+
+        <h1>Mentions Legales</h1>
+        <span class="legal-updated">Derniere mise a jour : Mars 2025</span>
+
+        <h2>1. Editeur du site</h2>
+        <p>
+          Le site <strong>Nova Ledger</strong> est edite par :<br>
+          <strong>Nova Ledger</strong> — Micro-entreprise<br>
+          Contact : <a href="mailto:contact@novaledger.com">contact@novaledger.com</a>
+        </p>
+
+        <h2>2. Hebergeur</h2>
+        <p>
+          Le site est heberge par :<br>
+          <strong>Netlify, Inc.</strong><br>
+          44 Montgomery Street, Suite 300, San Francisco, California 94104, USA<br>
+          Site web : netlify.com
+        </p>
+
+        <h2>3. Propriete intellectuelle</h2>
+        <p>
+          L'ensemble des contenus presents sur ce site (textes, images, logos, design, code source) sont la propriete exclusive de Nova Ledger ou de ses partenaires et sont proteges par les lois francaises et internationales relatives a la propriete intellectuelle.
+        </p>
+        <p>
+          Toute reproduction, representation, modification, publication ou adaptation de tout ou partie des elements du site est interdite sans l'autorisation ecrite prealable de Nova Ledger.
+        </p>
+
+        <h2>4. Limitation de responsabilite</h2>
+        <p>
+          Nova Ledger s'efforce de fournir des informations aussi precises que possible. Toutefois, Nova Ledger ne pourra etre tenu responsable des omissions, inexactitudes et carences dans la mise a jour, qu'elles soient de son fait ou du fait de tiers partenaires.
+        </p>
+        <p>
+          Le service Nova Ledger est actuellement en cours de developpement. Les fonctionnalites, tarifs et integrations presentes sur ce site sont indicatifs et susceptibles d'evoluer avant le lancement.
+        </p>
+
+        <h2>5. Droit applicable</h2>
+        <p>
+          Les presentes mentions legales sont soumises au droit francais. En cas de litige, et apres tentative de resolution amiable, competence est attribuee aux tribunaux competents du lieu du siege de l'editeur.
+        </p>
+
+        <!-- Privacy Policy -->
+        <h1 id="privacy" style="margin-top: 6rem;">Politique de Confidentialite</h1>
+        <span class="legal-updated">Derniere mise a jour : Mars 2025</span>
+
+        <h2>1. Responsable du traitement</h2>
+        <p>
+          Le responsable du traitement des donnees personnelles est :<br>
+          <strong>Nova Ledger</strong> — Micro-entreprise<br>
+          Contact : <a href="mailto:contact@novaledger.com">contact@novaledger.com</a>
+        </p>
+
+        <h2>2. Donnees collectees</h2>
+        <p>
+          A ce stade, le site vitrine Nova Ledger ne collecte aucune donnee personnelle. Aucun formulaire, cookie de tracking, ni outil d'analyse n'est utilise sur ce site.
+        </p>
+        <p>
+          Les seules donnees traitees sont :
+        </p>
+        <ul>
+          <li>Preference de theme (clair/sombre) stockee localement dans votre navigateur via <strong>localStorage</strong>. Cette donnee ne quitte jamais votre appareil.</li>
+        </ul>
+
+        <h2>3. Cookies</h2>
+        <p>
+          Ce site n'utilise aucun cookie. La preference de theme est stockee via localStorage, qui n'est pas un cookie au sens de la directive ePrivacy.
+        </p>
+
+        <h2>4. Hebergement et transfert de donnees</h2>
+        <p>
+          Ce site est heberge par Netlify, Inc. (Etats-Unis). L'acces au site peut impliquer un transfert technique de donnees de connexion (adresse IP, user-agent) vers les serveurs de Netlify, soumis a leur propre politique de confidentialite.
+        </p>
+
+        <h2>5. Services tiers futurs</h2>
+        <p>
+          Lors du lancement de l'application Nova Ledger, des donnees supplementaires seront collectees pour le fonctionnement du service (donnees de compte, donnees financieres synchronisees). Cette politique sera mise a jour en consequence avant la mise en service.
+        </p>
+        <p>
+          Les services tiers prevus incluent :
+        </p>
+        <ul>
+          <li><strong>Stripe</strong> — Traitement des paiements</li>
+          <li><strong>Pennylane, Sellsy, Evoliz, Axonaut</strong> — Synchronisation comptable</li>
+          <li><strong>GoCardless, Fintecture, Wise, Qonto</strong> — Connecteurs bancaires et de paiement</li>
+        </ul>
+
+        <h2>6. Vos droits</h2>
+        <p>
+          Conformement au Reglement General sur la Protection des Donnees (RGPD), vous disposez des droits suivants :
+        </p>
+        <ul>
+          <li>Droit d'acces a vos donnees personnelles</li>
+          <li>Droit de rectification</li>
+          <li>Droit a l'effacement</li>
+          <li>Droit a la limitation du traitement</li>
+          <li>Droit a la portabilite</li>
+          <li>Droit d'opposition</li>
+        </ul>
+        <p>
+          Pour exercer ces droits, contactez-nous a : <a href="mailto:contact@novaledger.com">contact@novaledger.com</a>
+        </p>
+        <p>
+          Vous pouvez egalement adresser une reclamation aupres de la CNIL : <a href="https://www.cnil.fr" target="_blank" rel="noopener">www.cnil.fr</a>
+        </p>
+
+        <h2>7. Modifications</h2>
+        <p>
+          Cette politique de confidentialite peut etre modifiee a tout moment. La date de derniere mise a jour est indiquee en haut de cette page.
+        </p>
+
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-links">
+      <div>
+        <div><span class="footer-brand-dot"></span><span class="footer-brand-name">Nova Ledger</span></div>
+        <p class="footer-brand-desc">Automated financial reconciliation powered by AI.</p>
+      </div>
+      <div>
+        <h4 class="footer-link-title">Product</h4>
+        <ul class="footer-link-list">
+          <li><a href="/#methodology" class="footer-link-item">Methodology</a></li>
+          <li><a href="/#features" class="footer-link-item">Features</a></li>
+          <li><a href="/#pricing" class="footer-link-item">Pricing</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="footer-link-title">Company</h4>
+        <ul class="footer-link-list">
+          <li><a href="#legal" class="footer-link-item">Mentions Legales</a></li>
+          <li><a href="#privacy" class="footer-link-item">Privacy</a></li>
+          <li><a href="mailto:contact@novaledger.com" class="footer-link-item">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="footer-link-title">Social</h4>
+        <div class="footer-social">
+          <a href="#" aria-label="Twitter">X</a>
+          <a href="#" aria-label="LinkedIn">in</a>
+        </div>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="footer-bottom-inner">
+        <span>&copy; 2025 Nova Ledger. All rights reserved.</span>
+        <span>System Status: In Development</span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Navbar scroll
+    window.addEventListener('scroll', function() {
+      document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 50);
+    });
+    // Force scrolled on legal page since content starts high
+    document.getElementById('navbar').classList.add('scrolled');
+
+    // Mobile menu
+    document.getElementById('mobileToggle').addEventListener('click', function() {
+      var menu = document.getElementById('mobileMenu');
+      var isOpen = menu.classList.toggle('open');
+      this.textContent = isOpen ? '\u2715' : '\u2630';
+    });
+
+    function closeMobile() {
+      document.getElementById('mobileMenu').classList.remove('open');
+      document.getElementById('mobileToggle').textContent = '\u2630';
+    }
+
+    // Dark mode
+    (function() {
+      var saved = localStorage.getItem('nova-theme');
+      if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+
+    document.getElementById('themeToggle').addEventListener('click', function() {
+      var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+      localStorage.setItem('nova-theme', isDark ? 'light' : 'dark');
+      this.textContent = isDark ? '\u263E' : '\u2600';
+    });
+
+    if (document.documentElement.getAttribute('data-theme') === 'dark') {
+      document.getElementById('themeToggle').textContent = '\u2600';
+    }
+  </script>
+</body>
+</html>

@@ -202,7 +202,7 @@ export const SERVICES_CATALOG: ServiceDefinition[] = [
     authMethod: 'file_upload',
     color: '#10B981',
     initials: 'CSV',
-    description: 'Importez un fichier CSV, OFX ou XML de votre banque',
+    description: 'Importez un fichier CSV, OFX, XML ou PDF de votre banque',
   },
 
   // ── Email ────────────────────────────────────────────────

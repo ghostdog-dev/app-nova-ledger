@@ -1,0 +1,61 @@
+!Type:Bank
+D15/03/2026
+T1234.56
+PStripe Payments
+MMonthly payout EUR - March 2026
+LIncome:Payment Provider
+^
+D14/03/2026
+T-45.99
+POVH SAS
+MHosting fee - Cloud Public
+LExpenses:Hosting
+^
+D13/03/2026
+T-127.85
+PAmazon EU SARL
+MOffice supplies order
+LExpenses:Office
+^
+D12/03/2026
+T567.89
+PPayPal Europe SARL
+MPayPal transfer to bank
+LIncome:Payment Provider
+^
+D11/03/2026
+T-19.99
+PFree Mobile
+MMobile phone subscription
+LExpenses:Telecom
+^
+D10/03/2026
+T2456.78
+PMollie Payments BV
+MSettlement STL-202603 payout
+LIncome:Payment Provider
+^
+D09/03/2026
+T-156.30
+PEDF
+MElectricity bill March 2026
+LExpenses:Utilities
+^
+D08/03/2026
+T3200.00
+PDupont Jean
+MFacture FACT-2026-042 development web
+LIncome:Clients
+^
+D07/03/2026
+T-1245.00
+PURSSAF Ile-de-France
+MCotisations sociales T1 2026
+LExpenses:Taxes
+^
+D06/03/2026
+T-234.50
+PGoogle Ireland Ltd
+MGoogle Ads campaign March
+LExpenses:Advertising
+^

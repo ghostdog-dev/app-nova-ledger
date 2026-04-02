@@ -1,0 +1,257 @@
+/* ============================================================
+   Execution Progress — Mobile-first
+   ============================================================ */
+
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.progressHeader {
+  margin-bottom: 0.375rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.progressLabel {
+  font-weight: 500;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.progressMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.wsStatus {
+  display: none;
+}
+
+.wsConnected {
+  color: var(--color-teal);
+}
+
+.wsDisconnected {
+  color: var(--color-text-light);
+}
+
+.wsIcon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.pctText {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.barTrack {
+  height: 0.5rem;
+  overflow: hidden;
+  background-color: var(--color-bg-alt);
+  border-radius: 0;
+}
+
+.barFill {
+  height: 100%;
+  transition: all 0.7s ease;
+  border-radius: 0;
+}
+
+.barFillNormal {
+  background-color: var(--color-inverted-bg);
+}
+
+.barFillFailed {
+  background-color: var(--color-accent);
+}
+
+/* --- Step list --- */
+
+.stepList {
+  position: relative;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.step {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.stepTrack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stepCircle {
+  display: flex;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  transition: all var(--transition);
+  border-radius: 0;
+}
+
+.stepCircleCompleted {
+  background-color: var(--color-teal);
+  color: #F5F2EB;
+}
+
+.stepCircleRunning {
+  background-color: var(--color-inverted-bg);
+  color: var(--color-text-on-inverted);
+}
+
+.stepCircleFailed {
+  background-color: var(--color-accent);
+  color: #F5F2EB;
+}
+
+.stepCirclePending {
+  background-color: var(--color-bg-alt);
+  color: var(--color-text-light);
+  border: 1px solid var(--color-border-light);
+}
+
+.stepIcon {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.stepConnector {
+  width: 2px;
+  flex: 1;
+  margin: 0.125rem 0;
+}
+
+.stepConnectorDone {
+  background-color: var(--color-teal);
+}
+
+.stepConnectorPending {
+  background-color: var(--color-bg-alt);
+}
+
+.stepContent {
+  padding-bottom: 0.75rem;
+  min-width: 0;
+}
+
+.stepContentLast {
+  padding-bottom: 0;
+}
+
+.stepLabel {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.stepLabelCompleted {
+  color: var(--color-teal);
+  font-weight: 500;
+}
+
+.stepLabelRunning {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.stepLabelFailed {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.stepLabelPending {
+  color: var(--color-text-light);
+}
+
+.stepMessage {
+  margin-top: 0.125rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-text-light);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+@media (min-width: 640px) {
+  .stepMessage {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+}
+
+/* ============================================================
+   Tablet (640px+)
+   ============================================================ */
+
+@media (min-width: 640px) {
+  .wrap {
+    gap: 1.25rem;
+  }
+
+  .progressHeader {
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .wsStatus {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .step {
+    gap: 0.75rem;
+  }
+
+  .stepCircle {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .stepIcon {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .stepConnector {
+    margin: 0.25rem 0;
+  }
+
+  .stepContent {
+    padding-bottom: 1rem;
+  }
+
+  .stepLabel {
+    font-size: 0.875rem;
+  }
+
+  .stepMessage {
+    font-size: 0.75rem;
+  }
+}
