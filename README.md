@@ -83,4 +83,4 @@ Ce projet est un **work in progress**. Fonctionnalites en cours de developpement
 
 ## Licence
 
-Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de details.
+Ce code est mis a disposition a des fins de consultation et de demonstration uniquement. Toute copie, modification, redistribution ou reutilisation est interdite. Voir le fichier [LICENSE](LICENSE) pour plus de details.
